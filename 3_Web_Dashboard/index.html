@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title> GIÁM SÁT NGẬP LỤT KHU VỰC ĐỐNG ĐA </title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="command-center">
+    <header class="header">
+      <div class="header__brand">
+        <h1 class="header__title header__title--glow">GIÁM SÁT NGẬP LỤT KHU VỰC ĐỐNG ĐA</h1>
+        <p class="header__subtitle">Các trạm · Thái Hà · Phạm Ngọc Thạch · Trường Chinh</p>
+      </div>
+      <div class="header__status">
+        <div class="clock" id="clock">--:--:--</div>
+        <div class="mqtt-led" id="mqttLed" title="MQTT">
+          <span class="mqtt-led__dot" id="mqttDot" aria-hidden="true"></span>
+          <span class="mqtt-led__label" id="mqttLabel">MQTT</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="main-grid">
+      <section class="overview glass-panel" id="systemOverview" aria-live="polite">
+        Đang tổng hợp trạng thái các trạm…
+      </section>
+
+      <div class="layout-split">
+        <aside class="station-panel glass-panel" aria-label="Danh sách trạm">
+          <h2 class="station-panel__title">Trạm</h2>
+          <p class="station-panel__hint">Chọn trạm để xem biểu đồ &amp; chỉ số</p>
+          <ul class="station-list" id="stationList"></ul>
+        </aside>
+
+        <div class="layout-content">
+      <section class="alert-banner alert-banner--safe" id="alertBanner" aria-live="polite">
+        <div class="alert-banner__icon-wrap" id="alertIconWrap" aria-hidden="true">
+          <svg class="alert-svg alert-svg--safe" viewBox="0 0 64 64" width="72" height="72" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="2" opacity="0.5"/>
+            <path d="M22 33l8 8 14-18" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <svg class="alert-svg alert-svg--warn" viewBox="0 0 64 64" width="72" height="72" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M32 8L6 54h52L32 8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" opacity="0.9"/>
+            <path d="M32 24v16M32 46v2" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+          </svg>
+          <svg class="alert-svg alert-svg--flood" viewBox="0 0 64 64" width="72" height="72" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 40c8-12 16-12 24 0s16 12 24 0" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+            <path d="M8 48c10-8 20-8 30 0s22 8 32 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+            <path d="M32 12v14M26 22l6-6 6 6" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="alert-banner__body">
+          <div class="alert-banner__status" id="alertStatus">Đang kết nối…</div>
+          <div class="alert-banner__confidence" id="alertConfidence">Độ tin cậy AI: —%</div>
+        </div>
+      </section>
+
+      <section class="cards">
+        <article class="glass-card card card--gauge">
+          <h3 class="card__title">Mực nước</h3>
+          <div class="gauge-wrap">
+            <svg class="gauge" viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="gauge__track" cx="60" cy="60" r="48" />
+              <circle class="gauge__arc gauge__arc--level" id="gaugeLevelArc" cx="60" cy="60" r="48" transform="rotate(-90 60 60)" />
+            </svg>
+            <div class="gauge__center">
+              <span class="gauge__num" id="valLevel">—</span>
+              <span class="gauge__unit">cm</span>
+            </div>
+          </div>
+          <div class="mini-bar mini-bar--level" aria-hidden="true">
+            <div class="mini-bar__fill" id="levelBar"></div>
+          </div>
+        </article>
+
+        <article class="glass-card card card--gauge">
+          <h3 class="card__title">Lưu lượng</h3>
+          <div class="gauge-wrap">
+            <svg class="gauge" viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="gauge__track" cx="60" cy="60" r="48" />
+              <circle class="gauge__arc gauge__arc--flow" id="gaugeFlowArc" cx="60" cy="60" r="48" transform="rotate(-90 60 60)" />
+            </svg>
+            <div class="gauge__center">
+              <span class="gauge__num" id="valFlow">—</span>
+              <span class="gauge__unit">m³/s</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="glass-card card">
+          <h3 class="card__title">Hiệu suất thoát nước</h3>
+          <div class="card__big-value"><span id="valEfficiency">—</span><span class="unit">%</span></div>
+          <div class="linear-gauge">
+            <div class="linear-gauge__fill" id="efficiencyFill"></div>
+          </div>
+          <p class="card__hint">flow ÷ (level + 1)</p>
+        </article>
+
+        <article class="glass-card card">
+          <h3 class="card__title">Mưa dự báo (Open-Meteo)</h3>
+          <div class="card__big-value card__big-value--rain">
+            <span class="rain-drop" aria-hidden="true"></span>
+            <span id="valRainForecast">—</span><span class="unit">mm/h</span>
+          </div>
+        </article>
+      </section>
+
+      <section class="charts-block glass-panel">
+        <h2 class="section-title">Biểu đồ thời gian thực</h2>
+        <div class="charts-grid">
+          <div class="chart-box">
+            <h4>Mực nước (cm)</h4>
+            <div class="chart-canvas-wrap"><canvas id="chartLevel"></canvas></div>
+          </div>
+          <div class="chart-box">
+            <h4>Lưu lượng (m³/s)</h4>
+            <div class="chart-canvas-wrap"><canvas id="chartFlow"></canvas></div>
+          </div>
+          <div class="chart-box">
+            <h4>Mưa cục bộ (sensor)</h4>
+            <div class="chart-canvas-wrap"><canvas id="chartRain"></canvas></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="map-block glass-panel">
+        <h2 class="section-title">Bản đồ trạm</h2>
+        <div id="map" class="map"></div>
+      </section>
+
+      <section class="controls-block glass-panel">
+        <h2 class="section-title">Điều khiển</h2>
+        <div class="controls">
+          <button type="button" class="btn btn--on" id="btnBuzzerOn">BẬT CÒI</button>
+          <button type="button" class="btn btn--off" id="btnBuzzerOff">TẮT CÒI</button>
+          <button type="button" class="btn btn--reset" id="btnResetAi">RESET BỘ NHỚ AI</button>
+        </div>
+      </section>
+
+      <section class="log-block">
+        <h2 class="section-title">System Log</h2>
+        <div class="terminal" id="logPanel" role="log" aria-live="polite"></div>
+      </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://unpkg.com/mqtt@5.10.3/dist/mqtt.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

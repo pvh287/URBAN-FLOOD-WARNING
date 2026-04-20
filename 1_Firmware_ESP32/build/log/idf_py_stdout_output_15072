@@ -1,0 +1,70 @@
+Command: C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe C:\Espressif\frameworks\esp-idf-v5.5.1\tools/idf_monitor.py -p COM7 -b 115200 --toolchain-prefix xtensa-esp32-elf- --target esp32 --revision 0 C:\Users\ACER\Desktop\DAVT\CANH_BAO_NGAP_LUT_DO_THI\1_Firmware_ESP32\build\flood_monitor.elf C:\Users\ACER\Desktop\DAVT\CANH_BAO_NGAP_LUT_DO_THI\1_Firmware_ESP32\build\bootloader\bootloader.elf --force-color -m 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' 'C:\Espressif\frameworks\esp-idf-v5.5.1\tools\idf.py'
+ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x12 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:6380
+ho 0 tail 12 room 4
+load:0x40078000,len:15916
+load:0x40080400,len:3860
+entry 0x40080638
+[0;32mI (29) boot: ESP-IDF v5.5.1-dirty 2nd stage bootloader[0m
+[0;32mI (29) boot: compile time Apr 18 2026 16:15:42[0m
+[0;32mI (29) boot: Multicore bootloader[0m
+[0;32mI (31) boot: chip revision: v3.1[0m
+[0;32mI (34) boot.esp32: SPI Speed      : 40MHz[0m
+[0;32mI (38) boot.esp32: SPI Mode       : DIO[0m
+[0;32mI (41) boot.esp32: SPI Flash Size : 2MB[0m
+[0;32mI (45) boot: Enabling RNG early entropy source...[0m
+[0;32mI (49) boot: Partition Table:[0m
+[0;32mI (52) boot: ## Label            Usage          Type ST Offset   Length[0m
+[0;32mI (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000[0m
+[0;32mI (65) boot:  1 phy_init         RF data          01 01 0000f000 00001000[0m
+[0;32mI (71) boot:  2 factory          factory app      00 00 00010000 00100000[0m
+[0;32mI (78) boot: End of partition table[0m
+[0;32mI (81) esp_image: segment 0: paddr=00010020 vaddr=3f400020 size=1d1c4h (119236) map[0m
+[0;32mI (129) esp_image: segment 1: paddr=0002d1ec vaddr=3ffb0000 size=027a0h ( 10144) load[0m
+[0;32mI (133) esp_image: segment 2: paddr=0002f994 vaddr=40080000 size=00684h (  1668) load[0m
+[0;32mI (134) esp_image: segment 3: paddr=00030020 vaddr=400d0020 size=6f2d8h (455384) map[0m
+[0;32mI (296) esp_image: segment 4: paddr=0009f300 vaddr=40080684 size=0f1f8h ( 61944) load[0m
+[0;32mI (321) esp_image: segment 5: paddr=000ae500 vaddr=50000000 size=00020h (    32) load[0m
+[0;32mI (328) boot: Loaded app from partition at offset 0x10000[0m
+[0;32mI (328) boot: Disabling RNG early entropy source...[0m
+[0;32mI (341) cpu_start: Multicore app[0m
+[0;32mI (349) cpu_start: Pro cpu start user code[0m
+[0;32mI (349) cpu_start: cpu freq: 160000000 Hz[0m
+[0;32mI (349) app_init: Application information:[0m
+[0;32mI (349) app_init: Project name:     flood_monitor[0m
+[0;32mI (354) app_init: App version:      1[0m
+[0;32mI (357) app_init: Compile time:     Apr 18 2026 16:15:22[0m
+[0;32mI (362) app_init: ELF file SHA256:  99d4927db...[0m
+[0;32mI (367) app_init: ESP-IDF:          v5.5.1-dirty[0m
+[0;32mI (371) efuse_init: Min chip rev:     v0.0[0m
+[0;32mI (375) efuse_init: Max chip rev:     v3.99 [0m
+[0;32mI (379) efuse_init: Chip rev:         v3.1[0m
+[0;32mI (383) heap_init: Initializing. RAM available for dynamic allocation:[0m
+[0;32mI (389) heap_init: At 3FFAE6E0 len 00001920 (6 KiB): DRAM[0m
+[0;32mI (394) heap_init: At 3FFB4150 len 0002BEB0 (175 KiB): DRAM[0m
+[0;32mI (399) heap_init: At 3FFE0440 len 00003AE0 (14 KiB): D/IRAM[0m
+[0;32mI (405) heap_init: At 3FFE4350 len 0001BCB0 (111 KiB): D/IRAM[0m
+[0;32mI (410) heap_init: At 4008F87C len 00010784 (65 KiB): IRAM[0m
+[0;32mI (417) spi_flash: detected chip: generic[0m
+[0;32mI (419) spi_flash: flash io: dio[0m
+[0;33mW (422) spi_flash: Detected size(4096k) larger than the size in the binary image header(2048k). Using the size in the binary image header.[0m
+[0;33mW (434) ADC: legacy driver is deprecated, please migrate to `esp_adc/adc_oneshot.h`[0m
+[0;32mI (442) main_task: Started on CPU0[0m
+[0;32mI (452) main_task: Calling app_main()[0m
+[0;32mI (472) SSD1306: Initializing I2C SSD1306...[0m
+[0;32mI (472) SSD1306: I2C SSD1306 initialized successfully[0m
+[0;32mI (1532) mqtt_service: Initializing Modem and PPP...[0m
+[0;32mI (1532) uart: queue free spaces: 30[0m
+[1;31mE (2042) mqtt_service: Failed to set modem mode: ESP_FAIL[0m
+[1;31mE (2042) mqtt_service: Modem PPPoS init failed[0m
+[1;31mE (2042) app_main: MQTT service init failed[0m
+[0;33mW (2042) app_main: MQTT not connected, skipping publish[0m
+[1;31mE (2042) esp-tls: couldn't get hostname for :broker.hivemq.com: getaddrinfo() returns 202, addrinfo=0x0[0m
+[1;31mE (2052) transport_base: Failed to open a new connection: 32769[0m
+[1;31mE (2062) mqtt_client: Error transport connect[0m
+[0;33mW (2062) mqtt_service: MQTT disconnected[0m
