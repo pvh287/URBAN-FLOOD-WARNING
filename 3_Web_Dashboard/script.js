@@ -1,751 +1,398 @@
 /**
- * Flood Command Center — Multi-station MQTT (EMQX WSS)
+ * FloodMind-AIoT DSS — Decision Support Dashboard
+ * Supports both legacy (v1) and new (v2) MQTT payloads.
  */
 (function () {
   'use strict';
-
   const STATIONS = [
-    { id: 'THAI_HA', name: 'Thái Hà', lat: 21.01205707861206, lon: 105.82107114719774 },
-    { id: 'PHAM_NGOC_THACH', name: 'Phạm Ngọc Thạch', lat: 21.009224497039224, lon: 105.8348400357426 },
-    { id: 'TRUONG_CHINH', name: 'Trường Chinh', lat: 21.001455046307868, lon: 105.8261326019895 },
+    { id:'THAI_HA', name:'Thái Hà', lat:21.01205707861206, lon:105.82107114719774 },
+    { id:'PHAM_NGOC_THACH', name:'Phạm Ngọc Thạch', lat:21.009224497039224, lon:105.8348400357426 },
+    { id:'TRUONG_CHINH', name:'Trường Chinh', lat:21.001455046307868, lon:105.8261326019895 },
   ];
-
-  const CONFIG = {
-    MQTT_WS_URL: 'wss://broker.emqx.io:8084/mqtt',
-    TOPIC_FLOOD_WILDCARD: 'flood/monitor/+/data',
-    TOPIC_AI_WILDCARD: 'ai/prediction/+',
-    TOPIC_SENSOR_COMMAND: 'sensor/command',
-    MAP_ZOOM: 14,
-    CHART_WINDOW_MS: 10 * 60 * 1000,
-    CHART_MAX_POINTS: 120,
-    OPEN_METEO_URL: 'https://api.open-meteo.com/v1/forecast',
-    SAFE_LEVEL: 30,
-    WARNING_LEVEL: 50,
-    CRITICAL_LEVEL: 80,
-    FLOW_GAUGE_MAX: 25,
+  const SC = {
+    'THAI_HA':{ border:'#ff6b6b', bgTop:'rgba(255,107,107,0.4)', bgBot:'rgba(255,107,107,0)' },
+    'PHAM_NGOC_THACH':{ border:'#3fb950', bgTop:'rgba(63,185,80,0.4)', bgBot:'rgba(63,185,80,0)' },
+    'TRUONG_CHINH':{ border:'#58a6ff', bgTop:'rgba(88,166,255,0.4)', bgBot:'rgba(88,166,255,0)' },
   };
-
-  const GAUGE_R = 48;
-  const GAUGE_C = 2 * Math.PI * GAUGE_R;
-
-  const chartTimestamps = [];
-  const chartLabels = [];
-  const levelSeries = [];
-  const flowSeries = [];
-  const rainSeries = [];
-
-  const stationStore = {};
-
-  let predictionSeq = 0;
-  let mqttClient = null;
-  let map = null;
-  const markers = {};
-  let chartLevel = null;
-  let chartFlow = null;
-  let chartRain = null;
-
-  const state = {
-    selectedStationId: STATIONS[0].id,
-    lastSensor: { level: null, flow: null, rain: null },
-    lastAI: null,
-    mqttConnected: false,
-    displayLevel: null,
-    displayFlow: null,
-    displayEff: null,
-    displayRainF: null,
+  const CFG = {
+    MQTT_WS_URL:'wss://broker.emqx.io:8084/mqtt',
+    TOPIC_FLOOD:'flood/monitor/+/data', TOPIC_AI:'ai/prediction/+', TOPIC_OVERALL:'ai/prediction/overall',
+    TOPIC_CMD:'sensor/command',
+    CHART_MAX:60, SAFE:30, WARN:50, CRIT:80, FLOW_MAX:25,
+    OPEN_METEO:'https://api.open-meteo.com/v1/forecast',
+    STALE_MS:15000, OFFLINE_MS:30000,
   };
+  const GR=48, GC=2*Math.PI*GR;
+  let gLabels=[], store={}, mqttC=null, map=null, markers={};
+  let cLevel=null, cFlow=null, cRain=null;
+  const S = {
+    sel:STATIONS[0].id, t0:Date.now(), mute:true,
+    lastSensor:{}, lastAI:null, mqttOk:false,
+    dL:null,dF:null,dE:null,dR:null,
+    lastSensorTime:{}, overall:null,
+  };
+  const el=id=>document.getElementById(id);
+  const pad=n=>String(n).padStart(2,'0');
+  const pn=(v,fb)=>{const n=parseFloat(v);return Number.isFinite(n)?n:fb;};
 
-  const el = (id) => document.getElementById(id);
-
-  function pad(n) {
-    return String(n).padStart(2, '0');
+  function ensure(sid){
+    if(!store[sid]) store[sid]={level:[],flow:[],rain:[],lastSensor:{level:null,flow:null,rain:null},lastAI:null};
+    return store[sid];
   }
 
-  function parseNum(v, fallback) {
-    const n = parseFloat(v);
-    return Number.isFinite(n) ? n : fallback;
+  // ── Tween ──
+  function tween(from,to,ms,fn){
+    const t0=performance.now();
+    (function f(t){const u=Math.min(1,(t-t0)/ms),e=1-Math.pow(1-u,3);fn(from+(to-from)*e);if(u<1)requestAnimationFrame(f);})(t0);
   }
+  function animN(id,from,to,d,cb){tween(pn(from,0),pn(to,0),300,v=>{if(id)el(id).textContent=v.toFixed(d);if(cb)cb(v);});}
 
-  function parseFloodTopic(topic) {
-    const m = /^flood\/monitor\/([^/]+)\/data$/.exec(topic);
-    return m ? m[1] : null;
-  }
+  // ── Gauge helpers ──
+  function setArc(id,pct){const a=el(id);if(a)a.style.strokeDashoffset=String(GC*(1-Math.min(100,Math.max(0,pct))/100));}
+  function initArcs(){['gaugeLevelArc','gaugeFlowArc','gaugeAiArc'].forEach(id=>{const a=el(id);if(a){a.style.strokeDasharray=String(GC);a.style.strokeDashoffset=String(GC);}});}
 
-  function parseAiTopic(topic) {
-    const m = /^ai\/prediction\/([^/]+)$/.exec(topic);
-    return m ? m[1] : null;
-  }
-
-  function ensureStation(sid) {
-    if (!stationStore[sid]) {
-      stationStore[sid] = {
-        timestamps: [],
-        labels: [],
-        level: [],
-        flow: [],
-        rain: [],
-        lastSensor: { level: null, flow: null, rain: null },
-        lastAI: null,
-        displayLevel: null,
-        displayFlow: null,
-        displayEff: null,
-      };
-    }
-    return stationStore[sid];
-  }
-
-  function tweenNumber(from, to, durationMs, onFrame) {
-    const t0 = performance.now();
-    function frame(t) {
-      const u = Math.min(1, (t - t0) / durationMs);
-      const eased = 1 - Math.pow(1 - u, 3);
-      onFrame(from + (to - from) * eased);
-      if (u < 1) requestAnimationFrame(frame);
-    }
-    requestAnimationFrame(frame);
-  }
-
-  function tickClock() {
-    const d = new Date();
-    el('clock').textContent =
-      `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  }
-
-  function setMqttLed(ok) {
-    const wrap = el('mqttLed');
-    const label = el('mqttLabel');
-    state.mqttConnected = ok;
-    wrap.classList.toggle('mqtt-led--ok', ok);
-    wrap.classList.toggle('mqtt-led--bad', !ok);
-    label.textContent = ok ? 'MQTT OK' : 'MQTT mất kết nối';
-  }
-
-  function appendLog(text, kind) {
-    const panel = el('logPanel');
-    const line = document.createElement('div');
-    line.className =
-      'log-line' + (kind === 'err' ? ' log-line--err' : kind === 'ok' ? ' log-line--ok' : '');
-    const ts = new Date().toISOString();
-    line.textContent = `> [${ts}] ${text}`;
-    panel.appendChild(line);
-    panel.scrollTop = panel.scrollHeight;
-  }
-
-  function mqttLib() {
-    if (typeof mqtt !== 'undefined') return mqtt;
-    if (typeof window !== 'undefined' && window.mqtt) return window.mqtt;
-    throw new Error('mqtt.js không tải được từ CDN');
-  }
-
-  function publishCommand(obj) {
-    if (!mqttClient || !state.mqttConnected) {
-      appendLog('Lỗi: chưa kết nối MQTT.', 'err');
-      return;
-    }
-    const payload = JSON.stringify(obj);
-    mqttClient.publish(CONFIG.TOPIC_SENSOR_COMMAND, payload, { qos: 1 }, (err) => {
-      if (err) appendLog(`Publish lỗi: ${err.message}`, 'err');
-      else appendLog(`→ ${CONFIG.TOPIC_SENSOR_COMMAND}: ${payload}`, 'ok');
-    });
-  }
-
-  function trimBufferArrays(tsArr, lbArr, a1, a2, a3) {
-    const now = Date.now();
-    while (
-      tsArr.length &&
-      (now - tsArr[0] > CONFIG.CHART_WINDOW_MS || tsArr.length > CONFIG.CHART_MAX_POINTS)
-    ) {
-      tsArr.shift();
-      lbArr.shift();
-      a1.shift();
-      a2.shift();
-      a3.shift();
-    }
-  }
-
-  function mirrorGlobalsToActiveStore() {
-    const s = ensureStation(state.selectedStationId);
-    s.timestamps = [...chartTimestamps];
-    s.labels = [...chartLabels];
-    s.level = [...levelSeries];
-    s.flow = [...flowSeries];
-    s.rain = [...rainSeries];
-    s.lastSensor = { ...state.lastSensor };
-    s.lastAI = state.lastAI;
-    s.displayLevel = state.displayLevel;
-    s.displayFlow = state.displayFlow;
-    s.displayEff = state.displayEff;
-  }
-
-  function loadStoreIntoGlobals(sid) {
-    const s = ensureStation(sid);
-    chartTimestamps.splice(0, chartTimestamps.length, ...s.timestamps);
-    chartLabels.splice(0, chartLabels.length, ...s.labels);
-    levelSeries.splice(0, levelSeries.length, ...s.level);
-    flowSeries.splice(0, flowSeries.length, ...s.flow);
-    rainSeries.splice(0, rainSeries.length, ...s.rain);
-    state.lastSensor = { ...s.lastSensor };
-    state.lastAI = s.lastAI;
-    state.displayLevel = s.displayLevel;
-    state.displayFlow = s.displayFlow;
-    state.displayEff = s.displayEff;
-  }
-
-  function setLevelGaugeVisual(level) {
-    const pct = Math.min(100, Math.max(0, (level / CONFIG.CRITICAL_LEVEL) * 100));
-    const arc = el('gaugeLevelArc');
-    if (arc) arc.style.strokeDashoffset = String(GAUGE_C * (1 - pct / 100));
-    const bar = el('levelBar');
-    if (bar) {
-      bar.style.width = `${pct}%`;
-      bar.classList.remove('mini-bar__fill--mid', 'mini-bar__fill--high');
-      if (level >= CONFIG.WARNING_LEVEL) bar.classList.add('mini-bar__fill--high');
-      else if (level >= CONFIG.SAFE_LEVEL) bar.classList.add('mini-bar__fill--mid');
-    }
-  }
-
-  function setFlowGaugeVisual(flow) {
-    const pct = Math.min(100, Math.max(0, (flow / CONFIG.FLOW_GAUGE_MAX) * 100));
-    const arc = el('gaugeFlowArc');
-    if (arc) arc.style.strokeDashoffset = String(GAUGE_C * (1 - pct / 100));
-  }
-
-  function initGaugeArcs() {
-    ['gaugeLevelArc', 'gaugeFlowArc'].forEach((id) => {
-      const a = el(id);
-      if (a) {
-        a.style.strokeDasharray = String(GAUGE_C);
-        a.style.strokeDashoffset = String(GAUGE_C);
-      }
-    });
-  }
-
-  function animateLevel(from, to) {
-    tweenNumber(parseNum(from, 0), parseNum(to, 0), 420, (v) => {
-      state.displayLevel = v;
-      el('valLevel').textContent = v.toFixed(1);
-      setLevelGaugeVisual(v);
-    });
-  }
-
-  function animateFlow(from, to) {
-    tweenNumber(parseNum(from, 0), parseNum(to, 0), 420, (v) => {
-      state.displayFlow = v;
-      el('valFlow').textContent = v.toFixed(3);
-      setFlowGaugeVisual(v);
-    });
-  }
-
-  function animateEfficiency(from, to) {
-    tweenNumber(parseNum(from, 0), parseNum(to, 0), 400, (v) => {
-      state.displayEff = v;
-      el('valEfficiency').textContent = v.toFixed(1);
-      const fill = el('efficiencyFill');
-      if (fill) fill.style.width = `${Math.min(100, Math.max(0, v))}%`;
-    });
-  }
-
-  function animateRainForecast(from, to) {
-    tweenNumber(parseNum(from, 0), parseNum(to, 0), 500, (v) => {
-      state.displayRainF = v;
-      el('valRainForecast').textContent = v.toFixed(2);
-    });
-  }
-
-  function updateChartsDatasets() {
-    if (chartLevel) {
-      chartLevel.data.labels = chartLabels.slice();
-      chartLevel.data.datasets[0].data = levelSeries.slice();
-      chartLevel.update('none');
-    }
-    if (chartFlow) {
-      chartFlow.data.labels = chartLabels.slice();
-      chartFlow.data.datasets[0].data = flowSeries.slice();
-      chartFlow.update('none');
-    }
-    if (chartRain) {
-      chartRain.data.labels = chartLabels.slice();
-      chartRain.data.datasets[0].data = rainSeries.slice();
-      chartRain.update('none');
-    }
-  }
-
-  function pushChartPoint(level, flow, rain) {
-    const now = Date.now();
-    const t = new Date();
-    const label = `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
-    chartTimestamps.push(now);
-    chartLabels.push(label);
-    levelSeries.push(level);
-    flowSeries.push(flow);
-    rainSeries.push(rain);
-    trimBufferArrays(chartTimestamps, chartLabels, levelSeries, flowSeries, rainSeries);
-    mirrorGlobalsToActiveStore();
-    updateChartsDatasets();
-  }
-
-  function pushStoreOnly(sid, level, flow, rain) {
-    const s = ensureStation(sid);
-    const now = Date.now();
-    const t = new Date();
-    const label = `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
-    s.timestamps.push(now);
-    s.labels.push(label);
-    s.level.push(level);
-    s.flow.push(flow);
-    s.rain.push(rain);
-    trimBufferArrays(s.timestamps, s.labels, s.level, s.flow, s.rain);
-  }
-
-  function drainageEfficiencyPct(level, flow) {
-    const l = Number(level) || 0;
-    const f = Number(flow) || 0;
-    return Math.min(100, Math.max(0, (f / (l + 1)) * 100));
-  }
-
-  function updateSensorCards(data) {
-    const level = Number(data.level ?? 0);
-    const flow = Number(data.flow ?? 0);
-    const rain = Number(data.rain ?? data.rain_local ?? 0);
-    state.lastSensor = { level, flow, rain };
-
-    const fromL = state.displayLevel != null ? state.displayLevel : level;
-    const fromF = state.displayFlow != null ? state.displayFlow : flow;
-    const eff = drainageEfficiencyPct(level, flow);
-    const fromE = state.displayEff != null ? state.displayEff : eff;
-
-    animateLevel(fromL, level);
-    animateFlow(fromF, flow);
-    animateEfficiency(fromE, eff);
-    pushChartPoint(level, flow, rain);
-  }
-
-  function refreshUIFromSelection() {
-    loadStoreIntoGlobals(state.selectedStationId);
-    updateChartsDatasets();
-    const s = ensureStation(state.selectedStationId);
-    const ls = s.lastSensor;
-    if (ls.level != null && ls.flow != null) {
-      const eff = drainageEfficiencyPct(ls.level, ls.flow);
-      state.displayLevel = ls.level;
-      state.displayFlow = ls.flow;
-      state.displayEff = eff;
-      el('valLevel').textContent = ls.level.toFixed(1);
-      el('valFlow').textContent = ls.flow.toFixed(3);
-      el('valEfficiency').textContent = eff.toFixed(1);
-      el('efficiencyFill').style.width = `${eff}%`;
-      setLevelGaugeVisual(ls.level);
-      setFlowGaugeVisual(ls.flow);
-    } else {
-      state.displayLevel = null;
-      state.displayFlow = null;
-      state.displayEff = null;
-      el('valLevel').textContent = '—';
-      el('valFlow').textContent = '—';
-      el('valEfficiency').textContent = '—';
-      setLevelGaugeVisual(0);
-      setFlowGaugeVisual(0);
-      el('efficiencyFill').style.width = '0%';
-    }
-    state.lastSensor = { ...ls };
-    state.lastAI = s.lastAI;
-    setAlertBanner(s.lastAI);
-    renderStationList();
-  }
-
-  function setAlertBanner(ai) {
-    const banner = el('alertBanner');
-    const statusEl = el('alertStatus');
-    const confEl = el('alertConfidence');
-    banner.classList.remove('alert-banner--safe', 'alert-banner--warn', 'alert-banner--flood');
-    if (!ai || !ai.status) {
-      statusEl.textContent = 'Chưa có dự đoán AI (trạm đang chọn)';
-      confEl.textContent = 'Độ tin cậy AI: —%';
-      banner.classList.add('alert-banner--safe');
-      return;
-    }
-    statusEl.textContent = ai.status;
-    confEl.textContent = `Độ tin cậy AI: ${ai.confidence}%`;
-    if (ai.status === 'NGAP LUT') banner.classList.add('alert-banner--flood');
-    else if (ai.status === 'CANH BAO') banner.classList.add('alert-banner--warn');
-    else banner.classList.add('alert-banner--safe');
-  }
-
-  function updateOverview() {
-    let nSafe = 0;
-    let nWarn = 0;
-    let nFlood = 0;
-    let nUnknown = 0;
-    STATIONS.forEach((st) => {
-      const ai = ensureStation(st.id).lastAI;
-      if (!ai || !ai.status) nUnknown += 1;
-      else if (ai.status === 'NGAP LUT') nFlood += 1;
-      else if (ai.status === 'CANH BAO') nWarn += 1;
-      else nSafe += 1;
-    });
-    const parts = [];
-    if (nSafe) parts.push(`${nSafe} trạm An toàn`);
-    if (nWarn) parts.push(`${nWarn} trạm Cảnh báo`);
-    if (nFlood) parts.push(`${nFlood} trạm Đang ngập / nguy cơ cao`);
-    if (nUnknown) parts.push(`${nUnknown} trạm chưa có AI`);
-    el('systemOverview').textContent =
-      parts.length > 0 ? `Tổng quát hệ thống: ${parts.join(' · ')}.` : 'Tổng quát: chưa có dữ liệu AI.';
-  }
-
-  function rippleColorFromAi(ai) {
-    if (!ai || !ai.status) return '#8b949e';
-    if (ai.status === 'NGAP LUT') return '#ff6b6b';
-    if (ai.status === 'CANH BAO') return '#f0b429';
+  // ── Risk color ──
+  function riskColor(rs){
+    if(rs>=75) return '#ff4444';
+    if(rs>=50) return '#f0b429';
+    if(rs>=30) return '#58a6ff';
     return '#3fb950';
   }
 
-  function setMarkerRippleColor(sid, color) {
-    const mk = markers[sid];
-    if (!mk) return;
-    const root = mk.getElement && mk.getElement();
-    if (!root) return;
-    const inner = root.querySelector('.map-ripple-marker');
-    if (inner) inner.style.setProperty('--ripple-color', color);
+  function overallRiskColor(rs){
+    if(rs>=75) return '#ff4444';
+    if(rs>=50) return '#f0b429';
+    if(rs>=30) return '#58a6ff';
+    return '#3fb950';
   }
 
-  function updateMarkerPopup(sid) {
-    const mk = markers[sid];
-    if (!mk) return;
-    const st = STATIONS.find((x) => x.id === sid);
-    const s = ensureStation(sid);
-    const a = s.lastAI;
-    const ls = s.lastSensor;
-    const html = `
-      <div style="min-width:200px;font-family:Inter,system-ui,sans-serif;font-size:13px;color:#0d1117;">
-        <strong>${st ? st.name : sid}</strong><br/>
-        <span style="color:#57606a;">Mực nước:</span> ${ls.level != null ? ls.level.toFixed(1) + ' cm' : '—'}<br/>
-        <span style="color:#57606a;">Lưu lượng:</span> ${ls.flow != null ? ls.flow.toFixed(3) + ' m³/s' : '—'}<br/>
-        <span style="color:#57606a;">Mưa:</span> ${ls.rain != null ? ls.rain.toFixed(2) : '—'}<br/>
-        <hr style="border:none;border-top:1px solid #d0d7de;margin:6px 0;"/>
-        <span style="color:#57606a;">AI:</span> ${a ? a.status : '—'}<br/>
-        <span style="color:#57606a;">Tin cậy:</span> ${a ? a.confidence + '%' : '—'}
-      </div>`;
-    mk.bindPopup(html);
-  }
-
-  function ingestSensor(sid, data) {
-    const level = Number(data.level ?? 0);
-    const flow = Number(data.flow ?? 0);
-    const rain = Number(data.rain ?? data.rain_local ?? 0);
-    const s = ensureStation(sid);
-    s.lastSensor = { level, flow, rain };
-
-    if (sid === state.selectedStationId) {
-      updateSensorCards({ level, flow, rain });
-    } else {
-      pushStoreOnly(sid, level, flow, rain);
+  // ── Clock + freshness ──
+  function tick(){
+    const d=new Date();
+    el('clock').textContent=`${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    if(el('valUptime')){const ms=Date.now()-S.t0;const s=Math.floor(ms/1000);el('valUptime').textContent=`${pad(Math.floor(s/3600))}:${pad(Math.floor(s/60)%60)}:${pad(s%60)}`;}
+    const sid=S.sel, lt=S.lastSensorTime[sid];
+    if(lt){
+      const age=Date.now()-lt;
+      const fe=el('valFreshness');
+      if(fe){
+        if(age>CFG.OFFLINE_MS) fe.textContent='⛔ Mất kết nối trạm';
+        else if(age>CFG.STALE_MS) fe.textContent='⚠️ Dữ liệu chậm';
+        else fe.textContent='✅ Realtime';
+      }
+      
+      // Update banner dynamically if offline
+      if(age>CFG.OFFLINE_MS && S.lastAI) {
+          setBanner(S.lastAI);
+      }
     }
-    updateMarkerPopup(sid);
+  }
+
+  function setMqtt(ok){S.mqttOk=ok;const w=el('mqttLed'),l=el('mqttLabel');w.classList.toggle('mqtt-led--ok',ok);w.classList.toggle('mqtt-led--bad',!ok);l.textContent=ok?'MQTT OK':'MQTT OFF';}
+
+  function pubCmd(obj){if(!mqttC||!S.mqttOk)return;mqttC.publish(CFG.TOPIC_CMD,JSON.stringify(obj),{qos:1});}
+
+  // ── Charts ──
+  function areaGrad(stops){return ctx=>{const c=ctx.chart,{ctx:cx,chartArea:a}=c;if(!a)return stops.bottom;const g=cx.createLinearGradient(0,a.bottom,0,a.top);g.addColorStop(0,stops.bottom);g.addColorStop(1,stops.top);return g;};}
+  function chartOpts(){return{responsive:true,maintainAspectRatio:false,animation:{duration:300},interaction:{mode:'index',intersect:false},scales:{x:{ticks:{maxTicksLimit:8,color:'#8b949e',font:{size:10}},grid:{display:false},border:{display:false}},y:{beginAtZero:true,ticks:{color:'#8b949e',font:{size:10}},grid:{color:'rgba(255,255,255,0.035)'},border:{display:false}}},plugins:{legend:{display:false}},elements:{point:{radius:0,hitRadius:5},line:{borderWidth:2.5,tension:0.4}}};}
+  function buildDS(metric){return STATIONS.map(st=>{const c=SC[st.id],s=ensure(st.id),sel=st.id===S.sel;return{label:st.name,data:s[metric],borderColor:sel?c.border:c.border+'33',backgroundColor:areaGrad({bottom:c.bgBot,top:sel?c.bgTop:'rgba(0,0,0,0)'}),fill:true,borderWidth:sel?2.5:1.5};});}
+  function updateCharts(){if(cLevel){cLevel.data.datasets=buildDS('level');cLevel.update('none');}if(cFlow){cFlow.data.datasets=buildDS('flow');cFlow.update('none');}if(cRain){cRain.data.datasets=buildDS('rain');cRain.update('none');}}
+  function initCharts(){cLevel=new Chart(el('chartLevel'),{type:'line',data:{labels:gLabels,datasets:buildDS('level')},options:chartOpts()});cFlow=new Chart(el('chartFlow'),{type:'line',data:{labels:gLabels,datasets:buildDS('flow')},options:chartOpts()});cRain=new Chart(el('chartRain'),{type:'line',data:{labels:gLabels,datasets:buildDS('rain')},options:chartOpts()});}
+
+  function pushTime(){const d=new Date();gLabels.push(`${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`);if(gLabels.length>CFG.CHART_MAX)gLabels.shift();}
+  function pushStore(sid,l,f,r){const s=ensure(sid);s.level.push(l);s.flow.push(f);s.rain.push(r);if(s.level.length>CFG.CHART_MAX){s.level.shift();s.flow.shift();s.rain.shift();}}
+
+  // ── DSS UI updates ──
+  function updateRiskScore(rs){
+    const e=el('valRiskScore');if(e)e.textContent=Math.round(rs);
+    const c=el('riskScoreCircle');if(c)c.style.background=`conic-gradient(${riskColor(rs)} ${rs*3.6}deg, rgba(255,255,255,0.08) 0deg)`;
+    const lb=el('riskScoreLabel');
+    if(lb){if(rs>=75)lb.textContent='NGUY HIỂM';else if(rs>=50)lb.textContent='CẢNH BÁO';else if(rs>=30)lb.textContent='THEO DÕI';else lb.textContent='AN TOÀN';}
+  }
+  function updateExplanation(reasons){
+    const ul=el('explanationList');if(!ul)return;
+    if(!reasons||!reasons.length){ul.innerHTML='<li class="explanation-item">Chưa có phân tích</li>';return;}
+    ul.innerHTML=reasons.map(r=>`<li class="explanation-item">💡 ${r}</li>`).join('');
+  }
+  function updateScenario(ai){
+    const se=el('scenarioText');if(!se)return;
+    const parts=[];
+    const pl=ai&&(ai.forecast?ai.forecast.predicted_level_5min:ai.predicted_level_5min);
+    const rs=ai&&(ai.ai?ai.ai.risk_score:ai.risk_score);
+    const dq=ai&&ai.data_quality;
+    if(pl!=null&&pl>0) parts.push(`Nếu xu hướng hiện tại tiếp tục, mực nước có thể đạt ${pl} cm sau 5 phút.`);
+    if(rs!=null&&rs>75) parts.push('⚠️ Kịch bản nguy hiểm: cần bật cảnh báo và kiểm tra khu vực trạm ngay.');
+    if(rs!=null&&rs>50&&rs<=75) parts.push('Kịch bản cần theo dõi: mực nước có xu hướng tăng.');
+    if(dq==='BAD') parts.push('⛔ Kịch bản không chắc chắn: cần kiểm tra cảm biến.');
+    if(!parts.length) parts.push('Tình hình ổn định, tiếp tục giám sát.');
+    se.innerHTML=parts.join('<br>');
+  }
+  function updateDSS(ai){
+    // Read from v2 or legacy
+    const rs=ai.ai?ai.ai.risk_score:(ai.risk_score||0);
+    const pl=ai.forecast?ai.forecast.predicted_level_5min:(ai.predicted_level_5min||null);
+    const action=ai.recommended_action||'';
+    const explanation=ai.explanation||[];
+    const dq=ai.data_quality||'—';
+    const dp=ai.data_points||0;
+    const mv=ai.model_version||'—';
+    const ds=ai.decision_source||'—';
+
+    updateRiskScore(rs);
+    if(el('valPredictedLevel'))el('valPredictedLevel').textContent=pl!=null?pl:'—';
+    if(el('forecastHint')&&pl!=null) el('forecastHint').textContent=pl>=60?'⚠️ Vượt ngưỡng nguy hiểm!':pl>=40?'Cần theo dõi':'Trong ngưỡng an toàn';
+    if(el('valAction'))el('valAction').textContent=action||'Đang chờ…';
+    if(el('valDataQuality'))el('valDataQuality').textContent=dq;
+    if(el('valAiMemory'))el('valAiMemory').textContent=`${dp}/60`;
+    if(el('valModelVer'))el('valModelVer').textContent=mv;
+    if(el('valDecisionSrc'))el('valDecisionSrc').textContent=ds;
+    updateExplanation(explanation);
+    updateScenario(ai);
+  }
+
+  function handleOverallPrediction(payload){
+    S.overall = payload || null;
+    const badge=el('overallBadge');
+    const statusText=el('overallStatusText');
+    const riskScore=el('overallRiskScore');
+    const riskLabel=el('overallRiskLabel');
+    const highestStation=el('overallHighestStation');
+    const highestRisk=el('overallHighestRisk');
+    const highestStatus=el('overallHighestStatus');
+    const maxLevel=el('overallMaxLevel');
+    const trendingUp=el('overallTrendingUp');
+    const readyCount=el('overallReadyCount');
+    const action=el('overallAction');
+    const explanationList=el('overallExplanationList');
+
+    const notReady = !payload || payload.overall_status === 'CHUA_DU_DU_LIEU' || payload.overall_status === 'DU_LIEU_KHONG_DAY_DU';
+    if(notReady){
+      statusText.textContent='Đang chờ đủ dữ liệu 3 điểm đo...';
+      riskScore.textContent='--';
+      riskLabel.textContent='CHỜ DỮ LIỆU';
+      highestStation.textContent='—';
+      highestRisk.textContent='—';
+      highestStatus.textContent='—';
+      maxLevel.textContent='—';
+      trendingUp.textContent='—';
+      readyCount.textContent=`${payload && payload.stations_ready != null ? payload.stations_ready : 0}/${payload && payload.stations_total != null ? payload.stations_total : 3}`;
+      action.textContent='Chưa đủ dữ liệu từ 3 điểm đo, tiếp tục thu thập và không kết luận an toàn.';
+      if(explanationList) explanationList.innerHTML='<li class="explanation-item">Đang chờ đủ dữ liệu 3 điểm đo.</li>';
+      if(badge){badge.style.background='linear-gradient(135deg, rgba(139,148,158,0.18), rgba(255,255,255,0.03))';badge.style.borderColor='rgba(139,148,158,0.35)';}
+      return;
+    }
+
+    const rs=Number(payload.overall_risk_score || 0);
+    const color=overallRiskColor(rs);
+    statusText.textContent=payload.overall_status.replace(/_/g,' ');
+    riskScore.textContent=rs.toFixed(1);
+    riskLabel.textContent=rs>=75?'NGẬP':rs>=50?'CẢNH BÁO':rs>=30?'THEO DÕI':'AN TOÀN';
+    const station=payload.highest_risk_station || {};
+    highestStation.textContent=station.name || station.station_id || '—';
+    highestRisk.textContent=station.risk_score != null ? `${Number(station.risk_score).toFixed(1)}` : '—';
+    highestStatus.textContent=station.status || '—';
+    maxLevel.textContent=payload.forecast && payload.forecast.max_predicted_level_5min != null ? `${Number(payload.forecast.max_predicted_level_5min).toFixed(1)} cm` : '—';
+    trendingUp.textContent=payload.forecast ? `${payload.forecast.stations_trending_up}/${payload.stations_total || 3}` : '—';
+    readyCount.textContent=`${payload.stations_ready || 0}/${payload.stations_total || 3}`;
+    action.textContent=payload.recommended_action || 'Theo dõi sát toàn khu vực.';
+    if(explanationList){
+      const items=(payload.explanation && payload.explanation.length)?payload.explanation:['Đang chờ phân tích tổng thể.'];
+      explanationList.innerHTML=items.map(item=>`<li class="explanation-item">💡 ${item}</li>`).join('');
+    }
+    if(badge){badge.style.background=`linear-gradient(135deg, ${color}22, rgba(255,255,255,0.03))`;badge.style.borderColor=`${color}66`;}
+  }
+
+  // ── Sensor card updates ──
+  function updateSensor(data){
+    const lv=Number(data.level??0),fl=Number(data.flow??0),rn=Number(data.rain??data.rain_local??0);
+    const eff=Math.min(100,Math.max(0,(fl/(lv+1))*100));
+    animN('valLevel',S.dL,lv,1,v=>{S.dL=v;setArc('gaugeLevelArc',(v/CFG.CRIT)*100);});
+    animN('valFlow',S.dF,fl,3,v=>{S.dF=v;setArc('gaugeFlowArc',(v/CFG.FLOW_MAX)*100);});
+    animN('valEfficiency',S.dE,eff,1,v=>{S.dE=v;const f=el('efficiencyFill');if(f){f.style.width=Math.min(100,v)+'%';f.style.background=v>70?'linear-gradient(90deg,#3fb950,#2ea043)':v>=30?'linear-gradient(90deg,#f0b429,#d99a1c)':'linear-gradient(90deg,#ff6b6b,#d93838)';}});
+  }
+
+  // ── Alert banner ──
+  function setBanner(ai){
+    const b=el('alertBanner'),st=el('alertStatus'),cf=el('valAiConf');
+    b.classList.remove('alert-banner--safe','alert-banner--watch','alert-banner--warn','alert-banner--flood');
+    
+    const sid = S.sel;
+    const lt = S.lastSensorTime[sid];
+    const isOffline = lt && (Date.now() - lt > CFG.OFFLINE_MS);
+
+    if(!ai||!ai.status||isOffline){
+      st.textContent=isOffline ? 'Dữ liệu cũ / mất kết nối' : 'Chưa có dự đoán AI';
+      if(cf)cf.textContent='—';
+      b.classList.add('alert-banner--safe');
+      setArc('gaugeAiArc',0);
+      const a=el('gaugeAiArc');if(a){a.style.stroke='#8b949e';}
+      return;
+    }
+    // Detect v2 status format
+    let status=ai.status;
+    if(ai.ai&&ai.ai.status) status=ai.ai.status;
+    // Normalize
+    const sn=status.replace(/_/g,' ');
+    st.textContent=sn;
+    const conf=ai.ai?ai.ai.confidence:(ai.confidence||0);
+    if(cf)cf.textContent=conf;
+    setArc('gaugeAiArc',conf);
+    const a=el('gaugeAiArc');if(a){a.style.stroke=conf>70?'#ff6b6b':conf>40?'#f0b429':'#3fb950';}
+    el('alertConfidence').textContent=`Độ tin cậy AI: ${conf}%`;
+    if(sn.includes('NGAP')||sn.includes('FLOOD')) b.classList.add('alert-banner--flood');
+    else if(sn.includes('CANH')||sn.includes('WARN')) b.classList.add('alert-banner--warn');
+    else if(sn.includes('THEO')||sn.includes('WATCH')) b.classList.add('alert-banner--watch');
+    else b.classList.add('alert-banner--safe');
+  }
+
+  // ── Overview ──
+  function updateOverview(){
+    let nS=0,nW=0,nC=0,nF=0,nU=0,worst='',worstRS=0;
+    STATIONS.forEach(st=>{
+      const ai=ensure(st.id).lastAI;
+      if(!ai||!ai.status){nU++;return;}
+      const s=(ai.ai?ai.ai.status:ai.status)||'';
+      const rs=ai.ai?ai.ai.risk_score:(ai.risk_score||0);
+      if(s.includes('NGAP')||s.includes('FLOOD'))nF++;
+      else if(s.includes('CANH')||s.includes('WARN'))nC++;
+      else if(s.includes('THEO')||s.includes('WATCH'))nW++;
+      else nS++;
+      if(rs>worstRS){worstRS=rs;worst=st.name;}
+    });
+    const ov=el('systemOverview');
+    if(ov) ov.innerHTML=`<b>${STATIONS.length}</b> trạm · <span style="color:#3fb950">✅ ${nS} An toàn</span> · <span style="color:#58a6ff">👁 ${nW} Theo dõi</span> · <span style="color:#f0b429">⚠️ ${nC} Cảnh báo</span> · <span style="color:#ff6b6b">🌊 ${nF} Ngập</span>${nU?' · ❓ '+nU+' Chưa rõ':''}${worst?' · Nguy hiểm nhất: <b>'+worst+'</b> ('+worstRS+')':''}`;
+  }
+
+  // ── Ingest sensor data ──
+  function ingestSensor(sid,data){
+    const lv=Number(data.level_cm??data.level??0),fl=Number(data.flow_lpm??data.flow??0),rn=Number(data.rain_mm??data.rain??data.rain_local??0);
+    const s=ensure(sid);s.lastSensor={level:lv,flow:fl,rain:rn};
+    S.lastSensorTime[sid]=Date.now();
+    pushStore(sid,lv,fl,rn);
+    if(sid==='THAI_HA'||!gLabels.length){pushTime();updateCharts();}
+    if(sid===S.sel) updateSensor({level:lv,flow:fl,rain:rn});
     updateOverview();
   }
 
-  function ingestAi(sid, data) {
-    const s = ensureStation(sid);
-    s.lastAI = data;
-    setMarkerRippleColor(sid, rippleColorFromAi(data));
-    updateMarkerPopup(sid);
-
-    if (sid === state.selectedStationId) {
-      state.lastAI = data;
-      predictionSeq += 1;
-      appendLog(
-        `[${sid}] Prediction #${predictionSeq} ${data.status} ${data.confidence}% @ ${data.timestamp}`,
-        'ok'
-      );
-      setAlertBanner(data);
-      if (data.level != null && data.flow != null) {
-        updateSensorCards({
-          level: data.level,
-          flow: data.flow,
-          rain: data.rain != null ? data.rain : state.lastSensor.rain ?? 0,
-        });
-      }
+  // ── Ingest AI prediction ──
+  function ingestAi(sid,data){
+    const s=ensure(sid);
+    // Speak alert on transition to flood
+    const prevStatus=s.lastAI?((s.lastAI.ai?s.lastAI.ai.status:s.lastAI.status)||''):'';
+    const newStatus=(data.ai?data.ai.status:data.status)||'';
+    if((newStatus.includes('NGAP')||newStatus.includes('FLOOD'))&&!prevStatus.includes('NGAP')&&!prevStatus.includes('FLOOD')){
+      const st=STATIONS.find(x=>x.id===sid);if(st&&!S.mute&&'speechSynthesis' in window){const m=new SpeechSynthesisUtterance(`Cảnh báo, trạm ${st.name} nguy hiểm!`);m.lang='vi-VN';window.speechSynthesis.speak(m);}
     }
-    updateOverview();
-    renderStationList();
-  }
-
-  function selectStation(sid) {
-    if (!STATIONS.some((x) => x.id === sid)) return;
-    mirrorGlobalsToActiveStore();
-    state.selectedStationId = sid;
-    refreshUIFromSelection();
-    fetchOpenMeteoRain();
-  }
-
-  function renderStationList() {
-    const ul = el('stationList');
-    ul.innerHTML = '';
-    STATIONS.forEach((st) => {
-      const s = ensureStation(st.id);
-      const ai = s.lastAI;
-      let dotClass = 'station-btn__dot';
-      if (ai && ai.status === 'NGAP LUT') dotClass += ' station-btn__dot--flood';
-      else if (ai && ai.status === 'CANH BAO') dotClass += ' station-btn__dot--warn';
-      else if (ai && ai.status === 'AN TOAN') dotClass += ' station-btn__dot--safe';
-
-      const li = document.createElement('li');
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className =
-        'station-btn' + (st.id === state.selectedStationId ? ' station-btn--active' : '');
-      btn.innerHTML = `<span class="${dotClass}"></span><span class="station-btn__id">${st.id}</span><br/>${st.name}`;
-      btn.addEventListener('click', () => selectStation(st.id));
-      li.appendChild(btn);
-      ul.appendChild(li);
-    });
-  }
-
-  function initMap() {
-    const bounds = L.latLngBounds(STATIONS.map((s) => [s.lat, s.lon]));
-    map = L.map('map').fitBounds(bounds, { padding: [36, 36], maxZoom: 15 });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OSM &copy; CARTO',
-      subdomains: 'abcd',
-      maxZoom: 20,
-    }).addTo(map);
-
-    const rippleHtml =
-      '<div class="map-ripple-marker" style="--ripple-color:#8b949e">' +
-      '<span class="map-ripple"></span>' +
-      '<span class="map-ripple map-ripple--d2"></span>' +
-      '<span class="map-ripple-core"></span></div>';
-
-    STATIONS.forEach((st) => {
-      const icon = L.divIcon({
-        html: rippleHtml,
-        className: 'map-ripple-wrap',
-        iconSize: [56, 56],
-        iconAnchor: [28, 28],
-      });
-      const mk = L.marker([st.lat, st.lon], { icon, zIndexOffset: 800 }).addTo(map);
-      mk.on('click', () => {
-        selectStation(st.id);
-        updateMarkerPopup(st.id);
-        mk.openPopup();
-      });
-      markers[st.id] = mk;
-      updateMarkerPopup(st.id);
-    });
-  }
-
-  function areaGradient(stops) {
-    return function (context) {
-      const chart = context.chart;
-      const { ctx, chartArea } = chart;
-      if (!chartArea) return stops.bottom;
-      const g = ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
-      g.addColorStop(0, stops.bottom);
-      g.addColorStop(1, stops.top);
-      return g;
-    };
-  }
-
-  function baseChartOptions() {
-    return {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: { duration: 220 },
-      interaction: { mode: 'index', intersect: false },
-      scales: {
-        x: {
-          ticks: { maxTicksLimit: 8, color: '#8b949e', font: { size: 10, family: 'Inter' } },
-          grid: { display: false, drawBorder: false },
-          border: { display: false },
-        },
-        y: {
-          beginAtZero: true,
-          ticks: { color: '#8b949e', font: { size: 10, family: 'Inter' } },
-          grid: { color: 'rgba(255,255,255,0.035)', drawBorder: false },
-          border: { display: false },
-        },
-      },
-      plugins: { legend: { display: false } },
-      elements: {
-        point: { radius: 0, hitRadius: 5 },
-        line: { borderWidth: 2.5, tension: 0.32 },
-      },
-    };
-  }
-
-  function initCharts() {
-    const commonLabels = chartLabels;
-    chartLevel = new Chart(el('chartLevel'), {
-      type: 'line',
-      data: {
-        labels: commonLabels,
-        datasets: [
-          {
-            label: 'Level',
-            data: levelSeries,
-            borderColor: 'rgb(88, 166, 255)',
-            backgroundColor: areaGradient({
-              bottom: 'rgba(88,166,255,0)',
-              top: 'rgba(88,166,255,0.42)',
-            }),
-            fill: true,
-          },
-        ],
-      },
-      options: baseChartOptions(),
-    });
-    chartFlow = new Chart(el('chartFlow'), {
-      type: 'line',
-      data: {
-        labels: commonLabels,
-        datasets: [
-          {
-            label: 'Flow',
-            data: flowSeries,
-            borderColor: 'rgb(56, 189, 248)',
-            backgroundColor: areaGradient({
-              bottom: 'rgba(56,189,248,0)',
-              top: 'rgba(56,189,248,0.4)',
-            }),
-            fill: true,
-          },
-        ],
-      },
-      options: baseChartOptions(),
-    });
-    chartRain = new Chart(el('chartRain'), {
-      type: 'line',
-      data: {
-        labels: commonLabels,
-        datasets: [
-          {
-            label: 'Rain',
-            data: rainSeries,
-            borderColor: 'rgb(163, 113, 247)',
-            backgroundColor: areaGradient({
-              bottom: 'rgba(163,113,247,0)',
-              top: 'rgba(163,113,247,0.4)',
-            }),
-            fill: true,
-          },
-        ],
-      },
-      options: baseChartOptions(),
-    });
-  }
-
-  async function fetchOpenMeteoRain() {
-    const st = STATIONS.find((x) => x.id === state.selectedStationId) || STATIONS[0];
-    try {
-      const u = new URL(CONFIG.OPEN_METEO_URL);
-      u.searchParams.set('latitude', String(st.lat));
-      u.searchParams.set('longitude', String(st.lon));
-      u.searchParams.set('hourly', 'precipitation');
-      u.searchParams.set('forecast_hours', '2');
-      u.searchParams.set('timezone', 'auto');
-      const res = await fetch(u.toString());
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const j = await res.json();
-      const p = j.hourly && j.hourly.precipitation;
-      if (!p || !p.length) throw new Error('Thiếu precipitation');
-      const next = p.length > 1 ? p[1] : p[0];
-      const val = Number(next);
-      const from = state.displayRainF != null ? state.displayRainF : val;
-      animateRainForecast(from, val);
-    } catch (e) {
-      el('valRainForecast').textContent = '—';
-      appendLog(`Open-Meteo: ${e.message}`, 'err');
+    s.lastAI=data;
+    if(sid===S.sel){S.lastAI=data;setBanner(data);updateDSS(data);
+      if(data.current){updateSensor({level:data.current.level_cm,flow:data.current.flow_lpm,rain:data.current.rain_mm});}
+      else if(data.level!=null){updateSensor(data);}
     }
+    updateOverview();renderStations();
   }
 
-  function connectMqtt() {
-    const lib = mqttLib();
-    const clientId = 'multi-cmd-' + Math.random().toString(36).slice(2, 10);
-    mqttClient = lib.connect(CONFIG.MQTT_WS_URL, {
-      clientId,
-      reconnectPeriod: 4000,
-      connectTimeout: 20000,
-      protocolVersion: 4,
-    });
+  function selectStation(sid){if(!STATIONS.some(x=>x.id===sid))return;S.sel=sid;refreshUI();}
 
-    mqttClient.on('connect', () => {
-      setMqttLed(true);
-      appendLog(`MQTT kết nối (${CONFIG.MQTT_WS_URL})`, 'ok');
-      mqttClient.subscribe(
-        [CONFIG.TOPIC_FLOOD_WILDCARD, CONFIG.TOPIC_AI_WILDCARD],
-        { qos: 0 },
-        (err) => {
-          if (err) appendLog(`Subscribe lỗi: ${err.message}`, 'err');
-          else appendLog(`Subscribed: ${CONFIG.TOPIC_FLOOD_WILDCARD}, ${CONFIG.TOPIC_AI_WILDCARD}`, 'ok');
-        }
-      );
-    });
+  function refreshUI(){
+    const s=ensure(S.sel),ls=s.lastSensor||{};
+    if(ls.level!=null){S.dL=ls.level;S.dF=ls.flow;el('valLevel').textContent=ls.level.toFixed(1);el('valFlow').textContent=ls.flow.toFixed(3);setArc('gaugeLevelArc',(ls.level/CFG.CRIT)*100);setArc('gaugeFlowArc',(ls.flow/CFG.FLOW_MAX)*100);}
+    else{S.dL=null;S.dF=null;el('valLevel').textContent='—';el('valFlow').textContent='—';}
+    S.lastAI=s.lastAI;setBanner(s.lastAI);if(s.lastAI)updateDSS(s.lastAI);
+    renderStations();updateCharts();
+  }
 
-    mqttClient.on('error', (err) => {
-      setMqttLed(false);
-      appendLog(`MQTT error: ${err && err.message}`, 'err');
+  function renderStations(){
+    const ul=el('stationList');ul.innerHTML='';
+    STATIONS.forEach(st=>{
+      const s=ensure(st.id),ai=s.lastAI;
+      let dc='station-btn__dot';
+      const status=ai?((ai.ai?ai.ai.status:ai.status)||''):'';
+      if(status.includes('NGAP')||status.includes('FLOOD'))dc+=' station-btn__dot--flood';
+      else if(status.includes('CANH')||status.includes('WARN'))dc+=' station-btn__dot--warn';
+      else if(status.includes('AN')||status.includes('SAFE'))dc+=' station-btn__dot--safe';
+      else if(status.includes('THEO')||status.includes('WATCH'))dc+=' station-btn__dot--watch';
+      const li=document.createElement('li'),btn=document.createElement('button');
+      btn.type='button';btn.className='station-btn'+(st.id===S.sel?' station-btn--active':'');
+      btn.innerHTML=`<span class="${dc}"></span><span class="station-btn__id">${st.id}</span><br>${st.name}`;
+      btn.addEventListener('click',()=>selectStation(st.id));
+      li.appendChild(btn);ul.appendChild(li);
     });
-    mqttClient.on('close', () => setMqttLed(false));
-    mqttClient.on('offline', () => setMqttLed(false));
+  }
 
-    mqttClient.on('message', (topic, message) => {
-      const text = message.toString();
-      const sidAi = parseAiTopic(topic);
-      if (sidAi) {
-        try {
-          ingestAi(sidAi, JSON.parse(text));
-        } catch (e) {
-          appendLog(`JSON AI (${sidAi}): ${e.message}`, 'err');
+  // ── Map ──
+  function initMap(){
+    const b=L.latLngBounds(STATIONS.map(s=>[s.lat,s.lon]));
+    map=L.map('map').fitBounds(b,{padding:[36,36],maxZoom:15});
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'&copy; OSM &copy; CARTO',subdomains:'abcd',maxZoom:20}).addTo(map);
+    const rh='<div class="map-ripple-marker" style="--ripple-color:#8b949e"><span class="map-ripple"></span><span class="map-ripple map-ripple--d2"></span><span class="map-ripple-core"></span></div>';
+    STATIONS.forEach(st=>{
+      const icon=L.divIcon({html:rh,className:'map-ripple-wrap',iconSize:[56,56],iconAnchor:[28,28]});
+      const mk=L.marker([st.lat,st.lon],{icon,zIndexOffset:800}).addTo(map);
+      mk.on('click',()=>{selectStation(st.id);mk.openPopup();});
+      markers[st.id]=mk;
+    });
+  }
+
+  // ── Weather ──
+  async function fetchWeather(){
+    try{
+      const u=new URL(CFG.OPEN_METEO);u.searchParams.set('latitude',String(STATIONS[0].lat));u.searchParams.set('longitude',String(STATIONS[0].lon));u.searchParams.set('hourly','precipitation,temperature_2m,relative_humidity_2m');u.searchParams.set('current_weather','true');u.searchParams.set('forecast_hours','2');u.searchParams.set('timezone','auto');
+      const r=await fetch(u.toString());if(!r.ok)throw new Error(`HTTP ${r.status}`);const j=await r.json();
+      const p=j.hourly&&j.hourly.precipitation;if(p&&p.length){const v=Number(p.length>1?p[1]:p[0]);animN('valRainForecast',S.dR,v,2,v2=>{S.dR=v2;});}
+      if(j.current_weather&&el('valTemp'))el('valTemp').textContent=j.current_weather.temperature+'°C';
+      if(j.hourly&&j.hourly.relative_humidity_2m&&j.hourly.relative_humidity_2m.length>0&&el('valHum'))el('valHum').textContent='💧 '+j.hourly.relative_humidity_2m[0]+'%';
+    }catch(e){console.error('Weather:',e.message);}
+  }
+
+  // ── CSV Export ──
+  function exportCSV(){
+    const sid=S.sel,s=ensure(sid);
+    let csv='Thời gian,Mực nước (cm),Lưu lượng,Lượng mưa (mm)\n';
+    for(let i=0;i<gLabels.length;i++){csv+=`${gLabels[i]},${s.level[i]??''},${s.flow[i]??''},${s.rain[i]??''}\n`;}
+    const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`FloodMind_${sid}.csv`;document.body.appendChild(a);a.click();document.body.removeChild(a);
+  }
+
+  // ── MQTT ──
+  function connectMqtt(){
+    const lib=typeof mqtt!=='undefined'?mqtt:window.mqtt;
+    mqttC=lib.connect(CFG.MQTT_WS_URL,{clientId:'fmdss-'+Math.random().toString(36).slice(2,10),reconnectPeriod:4000,connectTimeout:20000,protocolVersion:4});
+    mqttC.on('connect',()=>{setMqtt(true);mqttC.subscribe([CFG.TOPIC_FLOOD,CFG.TOPIC_AI,CFG.TOPIC_OVERALL],{qos:0});});
+    mqttC.on('error',()=>setMqtt(false));
+    mqttC.on('close',()=>setMqtt(false));
+    mqttC.on('offline',()=>setMqtt(false));
+    mqttC.on('message',(topic,msg)=>{
+      const txt=msg.toString();
+      try {
+        if(topic === CFG.TOPIC_OVERALL || topic === 'ai/prediction/overall') {
+          handleOverallPrediction(JSON.parse(txt));
+          return;
         }
-        return;
-      }
-      const sidData = parseFloodTopic(topic);
-      if (sidData) {
-        try {
-          ingestSensor(sidData, JSON.parse(text));
-        } catch (e) {
-          appendLog(`JSON sensor (${sidData}): ${e.message}`, 'err');
-        }
+        const mAi=/^ai\/prediction\/([^/]+)$/.exec(topic);
+        if(mAi){ingestAi(mAi[1],JSON.parse(txt));return;}
+        const mD=/^flood\/monitor\/([^/]+)\/data$/.exec(topic);
+        if(mD){ingestSensor(mD[1],JSON.parse(txt));return;}
+      } catch(e) {
+        console.error('Lỗi xử lý MQTT:', topic, e);
       }
     });
   }
 
-  function wireControls() {
-    el('btnBuzzerOn').addEventListener('click', () =>
-      publishCommand({ action: 'toggle_buzzer', value: 'ON' })
-    );
-    el('btnBuzzerOff').addEventListener('click', () =>
-      publishCommand({ action: 'toggle_buzzer', value: 'OFF' })
-    );
-    el('btnResetAi').addEventListener('click', () =>
-      publishCommand({ action: 'reset_ai', station_id: state.selectedStationId })
-    );
+  // ── Controls ──
+  function wireControls(){
+    el('btnBuzzerOn')?.addEventListener('click',()=>pubCmd({action:'toggle_buzzer',value:'ON'}));
+    el('btnBuzzerOff')?.addEventListener('click',()=>pubCmd({action:'toggle_buzzer',value:'OFF'}));
+    el('btnResetAi')?.addEventListener('click',()=>pubCmd({action:'reset_ai',station_id:S.sel}));
+    const bm=el('btnToggleMute');if(bm)bm.addEventListener('click',()=>{S.mute=!S.mute;bm.textContent=S.mute?'🔇 BẬT ÂM THANH':'🔊 TẮT ÂM THANH';});
+    el('btnExportCsv')?.addEventListener('click',exportCSV);
   }
 
-  function init() {
-    STATIONS.forEach((s) => ensureStation(s.id));
-    initGaugeArcs();
-    tickClock();
-    setInterval(tickClock, 1000);
-    setMqttLed(false);
-    wireControls();
-    initCharts();
-    initMap();
-    renderStationList();
-    refreshUIFromSelection();
-    fetchOpenMeteoRain();
-    setInterval(fetchOpenMeteoRain, 5 * 60 * 1000);
-    try {
-      connectMqtt();
-    } catch (e) {
-      appendLog(String(e.message || e), 'err');
-    }
+  // ── Init ──
+  function init(){
+    initArcs();tick();setInterval(tick,1000);setMqtt(false);wireControls();initCharts();initMap();renderStations();refreshUI();fetchWeather();setInterval(fetchWeather,5*60*1000);
+    try{connectMqtt();}catch(e){console.error(e);}
+    handleOverallPrediction(null);
     updateOverview();
   }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();

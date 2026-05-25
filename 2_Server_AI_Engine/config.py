@@ -1,10 +1,23 @@
 """
-Configuration module for Smart Water Flood Warning System
-Manages MQTT, API keys, coordinates, and system constants
+=========================================================================
+ FloodMind-AIoT DSS — Configuration Module
+=========================================================================
+ Centralised configuration for the FloodMind AI Engine.
+ Loads secrets from environment variables / .env file.
+=========================================================================
 """
 
 import os
 import logging
+from pathlib import Path
+
+# ---------- try to load .env automatically (python-dotenv) ----------
+try:
+    from dotenv import load_dotenv
+    _env_path = Path(__file__).resolve().parent / '.env'
+    load_dotenv(_env_path)
+except ImportError:
+    pass  # python-dotenv not installed — fall back to OS env vars
 
 # ==================== LOGGING SETUP ====================
 logging.basicConfig(
@@ -15,110 +28,150 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ==================== MQTT CONFIGURATION ====================
-# Trùng broker với 3_Web_Dashboard/script.js (WebSocket port 8000)
-MQTT_BROKER = 'broker.emqx.io'
-MQTT_PORT = 1883                # Cổng TCP cho Python (Simulator & AI Engine)
+MQTT_BROKER = os.environ.get('MQTT_BROKER', 'broker.emqx.io')
+MQTT_PORT = int(os.environ.get('MQTT_PORT', 1883))
 MQTT_KEEPALIVE = 60
 
 # MQTT Topics
-TOPIC_DATA = 'openhab/water/data'              # Legacy single-station (optional)
-TOPIC_FLOOD_MONITOR_WILDCARD = 'flood/monitor/+/data'  # Multi-station sensor stream
-TOPIC_BUZZER_CMD = 'openhab/water/buzzer/cmd'  # Send ON/OFF to ESP32 buzzer
-TOPIC_BUZZER_STATUS = 'openhab/water/buzzer/status'  # Monitor buzzer status
-TOPIC_AI_PREDICTION_PREFIX = 'ai/prediction'   # AI publishes to ai/prediction/{station_id}
-TOPIC_SENSOR_COMMAND = 'sensor/command'        # Web → backend: buzzer / reset_ai
+TOPIC_DATA = 'openhab/water/data'                          # Legacy single-station (optional)
+TOPIC_FLOOD_MONITOR_WILDCARD = 'flood/monitor/+/data'      # Multi-station sensor stream
+TOPIC_BUZZER_CMD = 'openhab/water/buzzer/cmd'              # Send ON/OFF to ESP32 buzzer
+TOPIC_BUZZER_STATUS = 'openhab/water/buzzer/status'        # Monitor buzzer status
+TOPIC_AI_PREDICTION_PREFIX = 'ai/prediction'               # AI publishes to ai/prediction/{station_id}
+TOPIC_SENSOR_COMMAND = 'sensor/command'                    # Web → backend: buzzer / reset_ai
 
-# WebSocket cho trình duyệt (mqtt.js) — HiveMQ public
+# WebSocket cho trình duyệt (mqtt.js)
 MQTT_WS_URL = 'ws://broker.emqx.io:8083/mqtt'
-
-# ==================== OPENWEATHERMAP API ====================
-# DEPRECATED: Switched to Open-Meteo (Free, No API Key Required)
-# Get API key from: https://openweathermap.org/api
-# OWM_API_KEY = 'YOUR_API_KEY_HERE'
-# OWM_API_URL = 'https://api.openweathermap.org/data/2.5/weather'
-# OWM_FORECAST_URL = 'https://api.openweathermap.org/data/2.5/forecast'
 
 # ==================== OPEN-METEO API (FREE - NO API KEY) ====================
 OPEN_METEO_API_URL = 'https://api.open-meteo.com/v1/forecast'
-
-# API request timeout (seconds)
 API_TIMEOUT = 10
+API_CALL_INTERVAL = 900  # 15 minutes
 
-# API call interval (seconds) - Call every 15 minutes
-API_CALL_INTERVAL = 900  # 15 * 60
+# ==================== TELEGRAM ALERTS (FROM ENV) ====================
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', '')
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
+
+if not TELEGRAM_TOKEN:
+    logger.warning("[CONFIG] TELEGRAM_TOKEN not set — Telegram alerts disabled. "
+                   "Set via .env or environment variable.")
+if not TELEGRAM_CHAT_ID:
+    logger.warning("[CONFIG] TELEGRAM_CHAT_ID not set — Telegram alerts disabled.")
 
 # ==================== LOCATION COORDINATES ====================
-# Ngã tư Thái Hà – Chùa Bộc (Đống Đa, Hà Nội) — khớp bản đồ dashboard
 LAT = 21.009498200175187
 LON = 105.82395392902815
 LOCATION_NAME = "Ngã tư Thái Hà - Chùa Bộc, Hà Nội"
 
 # ==================== TOPOGRAPHIC INDEX ====================
-# 0.8 represents low-lying area (Vùng trũng) - High flood risk
-# 1.0 = normal terrain, < 1.0 = depression zone
 TOPO_INDEX = 0.8
 
-# ==================== DATA COLLECTION ====================
-# Historical data storage
-DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
-SENSOR_HISTORY_FILE = os.path.join(DATA_DIR, 'sensor_history.csv')
-MODEL_DIR = os.path.join(os.path.dirname(__file__), 'models')
-MODEL_FILE = os.path.join(MODEL_DIR, 'flood_model.h5')
+# ==================== DIRECTORY STRUCTURE ====================
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / 'data'
+MODEL_DIR = BASE_DIR / 'models'
 
-# Create directories if not exist
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(MODEL_DIR, exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+# ==================== MODEL FILES ====================
+MODEL_FILE_V2 = str(MODEL_DIR / 'flood_model_v2.keras')
+MODEL_FILE_LEGACY = str(MODEL_DIR / 'flood_model.h5')
+MODEL_FILE = MODEL_FILE_LEGACY                              # alias for backward compat
+
+SCALER_SENSOR_FILE = str(MODEL_DIR / 'scaler_sensor.pkl')
+SCALER_HYDRO_FILE = str(MODEL_DIR / 'scaler_hydro.pkl')
+SCALER_WEATHER_FILE = str(MODEL_DIR / 'scaler_weather.pkl')
+SCALER_LEGACY_FILE = str(MODEL_DIR / 'scaler.pkl')
+
+MODEL_METADATA_FILE = str(MODEL_DIR / 'model_metadata.json')
+
+SENSOR_HISTORY_FILE = str(DATA_DIR / 'sensor_history.csv')
 
 # ==================== ANOMALY DETECTION THRESHOLDS ====================
-# Maximum acceptable water level change per minute (cm)
-MAX_DELTA_LEVEL = 20  # If exceeds this without rain, it's an anomaly
-
-# Minimum flow rate threshold (m³/s) - for sanity check
+MAX_DELTA_LEVEL = 20
 MIN_FLOW_RATE = 0.0
 MAX_FLOW_RATE = 100.0
 
-# ==================== FLOOD DETECTION THRESHOLDS ====================
-# Water level thresholds (cm)
-SAFE_LEVEL = 30
-WARNING_LEVEL = 50
-CRITICAL_LEVEL = 80
+# ==================== FLOOD RISK CLASSIFICATION (4-CLASS) ====================
+CLASS_SAFE = 0
+CLASS_WATCH = 1
+CLASS_WARNING = 2
+CLASS_FLOOD = 3
 
-# Risk classification (AI model output)
-CLASS_SAFE = 0          # Probability >= threshold -> SAFE
-CLASS_WARNING = 1       # Probability >= threshold -> WARNING
-CLASS_FLOOD = 2         # Probability >= threshold -> FLOOD ALERT
+CLASS_NAMES = {
+    CLASS_SAFE: 'AN_TOAN',
+    CLASS_WATCH: 'THEO_DOI',
+    CLASS_WARNING: 'CANH_BAO',
+    CLASS_FLOOD: 'NGAP_LUT',
+}
+CLASS_NAMES_EN = {
+    CLASS_SAFE: 'SAFE',
+    CLASS_WATCH: 'WATCH',
+    CLASS_WARNING: 'WARNING',
+    CLASS_FLOOD: 'FLOOD',
+}
 
-# Confidence threshold for sending commands
-FLOOD_ALERT_THRESHOLD = 0.8  # 80% confidence to trigger buzzer
+# Legacy 3-class aliases (for backward compat with old model)
+LEGACY_CLASS_SAFE = 0
+LEGACY_CLASS_WARNING = 1
+LEGACY_CLASS_FLOOD = 2
 
-# ==================== LSTM MODEL PARAMETERS ====================
-# IoT data input shape (60 minutes history, 5 features)
-LSTM_TIME_STEPS = 60  # 60 minutes of historical data
-LSTM_FEATURES = 5      # [level, flow, flow_efficiency, delta_level, rain_local]
-LSTM_UNITS = 64        # LSTM hidden units
+OUTPUT_CLASSES = 3          # legacy model output
+OUTPUT_CLASSES_V2 = 4       # v2 model output
+
+# ==================== HYDROLOGICAL THRESHOLDS (Rule Guard) ====================
+H_SAFE = 20                 # cm — below this is definitely safe
+H_WATCH = 30                # cm — watch threshold
+H_WARNING = 40              # cm — potential risk
+H_DANGER = 60               # cm — dangerous
+
+RAIN_HEAVY_5MIN = 10        # mm total in 5-min window → heavy rain
+SLOPE_H_WARNING = 3         # cm/min rising rate → watch
+SLOPE_H_DANGER = 6          # cm/min rising rate → danger
+
+DRAINAGE_STRESS_HIGH = 10   # h/(q+1) ratio → drainage overwhelmed
+
+# ==================== ALERT THRESHOLDS ====================
+FLOOD_ALERT_THRESHOLD = 0.75    # Risk score / confidence to trigger buzzer + Telegram
+WARNING_ALERT_THRESHOLD = 0.50
+
+# ==================== LSTM / MODEL PARAMETERS ====================
+LSTM_TIME_STEPS = 60        # 60 samples × 5 s/sample = 300 s = 5 minutes
+WINDOW_MINUTES = 5
+SAMPLE_INTERVAL_SEC = 5
+
+LSTM_FEATURES = 5           # [level, flow, flow_efficiency, delta_level, rain_local]
+LSTM_UNITS = 64
 LSTM_DROPOUT = 0.2
 
-# Weather API input shape
-WEATHER_FEATURES = 3   # [rain_forecast, time_decay, topo_index]
+WEATHER_FEATURES = 3        # [rain_forecast, time_decay, topo_index]
 WEATHER_DENSE_UNITS = 16
 
-# Fusion layer (matches train_model merged Dense after Concatenate)
 FUSION_DENSE_UNITS = 64
-OUTPUT_CLASSES = 3     # Safe, Warning, Flood
 
-# Training parameters (for future use)
+# Training parameters
 BATCH_SIZE = 32
 EPOCHS = 50
 VALIDATION_SPLIT = 0.2
 TEST_SPLIT = 0.1
 
-# ==================== LOGGING CONFIGURATION ====================
-# Log levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
-LOG_LEVEL = logging.INFO
+# ==================== SENSOR RANGE LIMITS (validation) ====================
+LEVEL_MIN = 0.0
+LEVEL_MAX = 200.0
+FLOW_MIN = 0.0
+FLOW_MAX = 100.0
+RAIN_MIN = 0.0
+RAIN_MAX = 100.0
 
-# Additional logging features
+# ==================== DATA FRESHNESS ====================
+SENSOR_STALE_SECONDS = 15       # seconds without data → stale
+SENSOR_OFFLINE_SECONDS = 30     # seconds without data → offline
+
+# ==================== LOGGING ====================
+LOG_LEVEL = logging.INFO
 ENABLE_FILE_LOGGING = True
-LOG_FILE = os.path.join(DATA_DIR, 'system.log')
+LOG_FILE = str(DATA_DIR / 'system.log')
 
 if ENABLE_FILE_LOGGING:
     file_handler = logging.FileHandler(LOG_FILE)
@@ -128,10 +181,11 @@ if ENABLE_FILE_LOGGING:
     logging.getLogger().addHandler(file_handler)
 
 # ==================== SYSTEM CONSTANTS ====================
-SYSTEM_NAME = "Smart Water Flood Warning System"
-VERSION = "1.0.0"
+SYSTEM_NAME = "FloodMind-AIoT DSS"
+VERSION = "2.0.0"
 DEVICE_ID = "SmartWaterMonitor_01"
 
 logger.info(f"Configuration loaded: {SYSTEM_NAME} v{VERSION}")
 logger.info(f"Location: {LOCATION_NAME} (LAT={LAT}, LON={LON})")
-logger.info(f"Topographic Index: {TOPO_INDEX} (Low-lying area)")
+logger.info(f"Topographic Index: {TOPO_INDEX}")
+logger.info(f"Telegram alerts: {'ENABLED' if TELEGRAM_TOKEN else 'DISABLED'}")

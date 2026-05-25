@@ -1,8 +1,8 @@
 :root {
   --bg-app: #0d1117;
   --bg-elevated: #161b22;
-  --glass-bg: rgba(22, 27, 34, 0.55);
-  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(13, 17, 23, 0.65);
+  --glass-border: rgba(255, 255, 255, 0.12);
   --text: #f0f6fc;
   --text-muted: #8b949e;
   --neon-green: #3fb950;
@@ -409,7 +409,7 @@ body {
   stroke-linecap: round;
   stroke-dasharray: var(--gauge-circ);
   stroke-dashoffset: var(--gauge-circ);
-  transition: stroke-dashoffset 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: stroke-dashoffset 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .gauge__arc--level {
@@ -460,7 +460,7 @@ body {
   width: 0%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--neon-cyan), var(--neon-green));
-  transition: width 0.45s ease;
+  transition: width 0.3s ease;
 }
 
 .mini-bar__fill--mid {
@@ -504,7 +504,7 @@ body {
   width: 0%;
   border-radius: inherit;
   background: linear-gradient(90deg, #a371f7, #58a6ff);
-  transition: width 0.45s ease;
+  transition: width 0.3s ease;
 }
 
 .card__hint {
@@ -584,6 +584,16 @@ body {
   align-items: center;
   justify-content: center;
   --ripple-color: #3fb950;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.3s ease;
+}
+
+.map-ripple-marker--active {
+  transform: scale(1.35);
+  filter: drop-shadow(0 0 8px var(--ripple-color));
+}
+
+.map-ripple-marker--active .map-ripple-core {
+  box-shadow: 0 0 24px var(--ripple-color);
 }
 
 .map-ripple {
@@ -684,47 +694,87 @@ body {
   box-shadow: 0 10px 28px rgba(137, 87, 229, 0.35);
 }
 
-.terminal {
-  min-height: 200px;
-  max-height: 300px;
-  overflow-y: auto;
-  padding: 1rem 1.1rem;
-  background: #010409;
-  border: 1px solid rgba(63, 185, 80, 0.25);
-  border-radius: var(--radius-md);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  line-height: 1.55;
-  color: #3fb950;
-  text-shadow: 0 0 8px rgba(63, 185, 80, 0.35);
-  box-shadow:
-    inset 0 0 40px rgba(63, 185, 80, 0.04),
-    0 0 24px rgba(0, 0, 0, 0.5);
+.btn--outline {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+.btn--outline:hover {
+  background: rgba(255, 255, 255, 0.15);
 }
 
-.terminal::-webkit-scrollbar {
-  width: 8px;
+.btn--export {
+  background: linear-gradient(145deg, #0d74ce, #025da8);
+  color: #fff;
+}
+.btn--export:hover {
+  border-color: rgba(88, 166, 255, 0.5);
+  box-shadow: 0 10px 28px rgba(13, 116, 206, 0.4);
 }
 
-.terminal::-webkit-scrollbar-thumb {
-  background: rgba(63, 185, 80, 0.25);
-  border-radius: 4px;
+.header__weather {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
 }
 
-.terminal .log-line {
+.header__weather-val {
+  font-weight: 700;
+  color: var(--neon-cyan);
+}
+
+.weather-icon {
+  font-size: 1.1rem;
+}
+
+.health-list {
+  list-style: none;
+  padding: 0;
   margin: 0;
-  padding: 0.1rem 0;
-  white-space: pre-wrap;
-  word-break: break-word;
+  font-size: 0.82rem;
 }
 
-.terminal .log-line--err {
-  color: #ff7b72;
-  text-shadow: 0 0 8px rgba(255, 123, 114, 0.35);
+.health-list li {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.terminal .log-line--ok {
-  color: #56d364;
+.health-list li:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.health-label {
+  color: var(--text-muted);
+}
+
+.health-val {
+  font-family: var(--font-mono);
+  color: var(--neon-cyan);
+  font-weight: 600;
+}
+
+.ai-gauge-wrap {
+  width: min(150px, 100%);
+  max-height: 150px;
+}
+
+.ai-arc {
+  stroke: var(--neon-purple);
+  filter: drop-shadow(0 0 10px rgba(163, 113, 247, 0.6));
+}
+
+.ai-center-val {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #fff;
 }
 
 .overview {
@@ -862,4 +912,114 @@ body {
   .layout-split {
     flex-direction: column;
   }
+}
+
+/* ==================== FloodMind-AIoT DSS — New Components ==================== */
+
+/* ── WATCH alert state ── */
+.alert-banner--watch::before {
+  background-image: linear-gradient(125deg,
+    rgba(88,166,255,0.45), rgba(63,185,80,0.25),
+    rgba(88,166,255,0.35), rgba(63,185,80,0.4));
+}
+.alert-banner--watch {
+  box-shadow: 0 0 40px rgba(88,166,255,0.18), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.alert-banner--watch .alert-svg--watch {
+  display: block;
+  color: var(--neon-cyan);
+  filter: drop-shadow(0 0 12px rgba(88,166,255,0.7));
+}
+
+/* ── Risk Score card ── */
+.card--risk { text-align: center; }
+.risk-score-wrap { display:flex; justify-content:center; margin:0.5rem 0; }
+.risk-score-circle {
+  width:90px; height:90px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background: conic-gradient(var(--neon-green) 0deg, rgba(255,255,255,0.08) 0deg);
+  box-shadow: 0 0 20px rgba(0,0,0,0.3);
+  transition: background 0.5s ease;
+}
+.risk-score-num {
+  font-size:1.8rem; font-weight:800; color:#fff;
+  text-shadow: 0 0 12px rgba(255,255,255,0.3);
+  background: var(--bg-elevated); width:70px; height:70px;
+  border-radius:50%; display:flex; align-items:center; justify-content:center;
+}
+.risk-score-label {
+  font-size:0.75rem; font-weight:700; text-transform:uppercase;
+  letter-spacing:0.12em; color:var(--text-muted); margin-top:0.25rem;
+  text-align:center;
+}
+
+/* ── Forecast card ── */
+.card--forecast .card__big-value { color: var(--neon-cyan); }
+.card--forecast .card__hint { font-size:0.72rem; }
+
+/* ── Action card ── */
+.card--action { display:flex; flex-direction:column; }
+.action-text {
+  font-size:0.9rem; font-weight:600; line-height:1.5;
+  color:var(--text); flex:1; display:flex; align-items:center;
+}
+
+/* ── Data Quality card ── */
+.dq-list { list-style:none; padding:0; margin:0; font-size:0.78rem; }
+.dq-list li {
+  display:flex; justify-content:space-between;
+  padding:0.3rem 0; border-bottom:1px solid rgba(255,255,255,0.06);
+}
+.dq-list li:last-child { border-bottom:none; }
+.dq-label { color:var(--text-muted); }
+.dq-val { font-family:var(--font-mono); color:var(--neon-cyan); font-weight:600; font-size:0.72rem; }
+
+/* ── Explanation panel ── */
+.explanation-panel { }
+.explanation-list { list-style:none; padding:0; margin:0; }
+.explanation-item {
+  padding:0.5rem 0; border-bottom:1px solid rgba(255,255,255,0.06);
+  font-size:0.82rem; color:rgba(240,246,252,0.9); line-height:1.45;
+}
+.explanation-item:last-child { border-bottom:none; }
+
+/* ── Scenario panel ── */
+.scenario-panel { }
+.scenario-text {
+  font-size:0.85rem; line-height:1.6; color:rgba(240,246,252,0.85);
+}
+
+/* ── DSS cards grid ── */
+.dss-cards { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+
+/* ── Overall AI panel ── */
+.overall-panel { display:flex; flex-direction:column; gap:1rem; }
+.overall-panel__header {
+  display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap;
+}
+.overall-panel__meta {
+  margin:0.35rem 0 0; color:var(--text-muted); font-size:0.95rem;
+}
+.overall-panel__badge {
+  min-width:110px; padding:0.9rem 1rem; border-radius:1rem;
+  border:1px solid rgba(88,166,255,0.35);
+  background: linear-gradient(135deg, rgba(88,166,255,0.18), rgba(255,255,255,0.03));
+  text-align:center;
+}
+.overall-risk-score { font-size:1.8rem; font-weight:800; }
+.overall-risk-label { font-size:0.75rem; text-transform:uppercase; letter-spacing:0.12em; color:var(--text-muted); margin-top:0.2rem; }
+.overall-panel__grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap:1rem; }
+.overall-kv {
+  display:flex; justify-content:space-between; gap:1rem; padding:0.55rem 0; border-bottom:1px solid rgba(255,255,255,0.06);
+}
+.overall-kv:last-child { border-bottom:none; }
+.overall-kv__label { color:var(--text-muted); font-size:0.85rem; }
+.overall-kv__value { font-weight:700; text-align:right; }
+.overall-action-text { font-size:0.92rem; line-height:1.55; color:rgba(240,246,252,0.9); }
+.overall-explanation { margin-top:0.25rem; }
+
+/* ── WATCH dot ── */
+.station-btn__dot--watch {
+  background: var(--neon-cyan);
+  box-shadow: 0 0 8px rgba(88,166,255,0.5);
 }

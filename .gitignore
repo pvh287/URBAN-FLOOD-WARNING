@@ -1,0 +1,57 @@
+# ===================== FloodMind-AIoT DSS .gitignore =====================
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# --- Virtual Environment ---
+.venv/
+venv/
+env/
+
+# --- Secrets & Environment ---
+.env
+*.env.local
+
+# --- ESP-IDF Build ---
+1_Firmware_ESP32/build/
+1_Firmware_ESP32/managed_components/
+1_Firmware_ESP32/sdkconfig.old
+
+# --- Logs ---
+*.log
+logs/
+2_Server_AI_Engine/data/system.log
+
+# --- Large Datasets (keep processed_training_data.csv for reproducibility) ---
+data/raw/
+2_Server_AI_Engine/data/2d_edges_dynamic_all.csv
+2_Server_AI_Engine/data/2d_nodes_dynamic_all.csv
+2_Server_AI_Engine/data/historical_data.csv
+2_Server_AI_Engine/data/raw_sensor_log.csv
+
+# --- Models (comment out if submitting for grading) ---
+# models/*.h5
+# models/*.keras
+# models/*.pkl
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Miscellaneous ---
+*.bak
+*.tmp

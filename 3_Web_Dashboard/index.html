@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title> GIÁM SÁT NGẬP LỤT KHU VỰC ĐỐNG ĐA </title>
+  <meta name="description" content="FloodMind-AIoT DSS — Hệ thống hỗ trợ ra quyết định cảnh báo ngập lụt đô thị thời gian thực" />
+  <title>FloodMind-AIoT DSS · Giám sát & Cảnh báo Ngập lụt Đô thị</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -14,19 +15,25 @@
   <div class="command-center">
     <header class="header">
       <div class="header__brand">
-        <h1 class="header__title header__title--glow">GIÁM SÁT NGẬP LỤT KHU VỰC ĐỐNG ĐA</h1>
-        <p class="header__subtitle">Các trạm · Thái Hà · Phạm Ngọc Thạch · Trường Chinh</p>
+        <h1 class="header__title header__title--glow">FloodMind-AIoT DSS</h1>
+        <p class="header__subtitle">Decision Support · Thái Hà · Phạm Ngọc Thạch · Trường Chinh</p>
+      </div>
+      <div class="header__weather glass-panel">
+        <span class="weather-icon" id="weatherIcon">🌡️</span>
+        <span class="header__weather-val" id="valTemp">--°C</span>
+        <span class="header__weather-val" id="valHum">--%</span>
       </div>
       <div class="header__status">
         <div class="clock" id="clock">--:--:--</div>
         <div class="mqtt-led" id="mqttLed" title="MQTT">
-          <span class="mqtt-led__dot" id="mqttDot" aria-hidden="true"></span>
+          <span class="mqtt-led__dot" id="mqttDot"></span>
           <span class="mqtt-led__label" id="mqttLabel">MQTT</span>
         </div>
       </div>
     </header>
 
     <main class="main-grid">
+      <!-- ── Overview ── -->
       <section class="overview glass-panel" id="systemOverview" aria-live="polite">
         Đang tổng hợp trạng thái các trạm…
       </section>
@@ -34,26 +41,18 @@
       <div class="layout-split">
         <aside class="station-panel glass-panel" aria-label="Danh sách trạm">
           <h2 class="station-panel__title">Trạm</h2>
-          <p class="station-panel__hint">Chọn trạm để xem biểu đồ &amp; chỉ số</p>
+          <p class="station-panel__hint">Chọn trạm để xem chi tiết</p>
           <ul class="station-list" id="stationList"></ul>
         </aside>
 
         <div class="layout-content">
+      <!-- ── Alert Banner ── -->
       <section class="alert-banner alert-banner--safe" id="alertBanner" aria-live="polite">
         <div class="alert-banner__icon-wrap" id="alertIconWrap" aria-hidden="true">
-          <svg class="alert-svg alert-svg--safe" viewBox="0 0 64 64" width="72" height="72" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="2" opacity="0.5"/>
-            <path d="M22 33l8 8 14-18" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <svg class="alert-svg alert-svg--warn" viewBox="0 0 64 64" width="72" height="72" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M32 8L6 54h52L32 8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" opacity="0.9"/>
-            <path d="M32 24v16M32 46v2" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
-          </svg>
-          <svg class="alert-svg alert-svg--flood" viewBox="0 0 64 64" width="72" height="72" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 40c8-12 16-12 24 0s16 12 24 0" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
-            <path d="M8 48c10-8 20-8 30 0s22 8 32 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
-            <path d="M32 12v14M26 22l6-6 6 6" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <svg class="alert-svg alert-svg--safe" viewBox="0 0 64 64" width="72" height="72" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="2" opacity=".5"/><path d="M22 33l8 8 14-18" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg class="alert-svg alert-svg--watch" viewBox="0 0 64 64" width="72" height="72" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="2" opacity=".5"/><path d="M32 18v16l10 6" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg class="alert-svg alert-svg--warn" viewBox="0 0 64 64" width="72" height="72" fill="none"><path d="M32 8L6 54h52L32 8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" opacity=".9"/><path d="M32 24v16M32 46v2" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/></svg>
+          <svg class="alert-svg alert-svg--flood" viewBox="0 0 64 64" width="72" height="72" fill="none"><path d="M12 40c8-12 16-12 24 0s16 12 24 0" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="M8 48c10-8 20-8 30 0s22 8 32 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".7"/><path d="M32 12v14M26 22l6-6 6 6" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
         <div class="alert-banner__body">
           <div class="alert-banner__status" id="alertStatus">Đang kết nối…</div>
@@ -61,91 +60,174 @@
         </div>
       </section>
 
+      <section class="glass-panel overall-panel" aria-live="polite">
+        <div class="overall-panel__header">
+          <div>
+            <h2 class="section-title">DỰ BÁO AI TỔNG THỂ KHU VỰC ĐỐNG ĐA</h2>
+            <p class="overall-panel__meta" id="overallStatusText">Đang chờ đủ dữ liệu 3 điểm đo…</p>
+          </div>
+          <div class="overall-panel__badge" id="overallBadge">
+            <div class="overall-risk-score" id="overallRiskScore">--</div>
+            <div class="overall-risk-label" id="overallRiskLabel">CHỜ DỮ LIỆU</div>
+          </div>
+        </div>
+
+        <div class="overall-panel__grid">
+          <div class="glass-card card">
+            <h3 class="card__title">Trạm nguy hiểm nhất</h3>
+            <div class="overall-kv"><span class="overall-kv__label">Tên trạm</span><span class="overall-kv__value" id="overallHighestStation">—</span></div>
+            <div class="overall-kv"><span class="overall-kv__label">Điểm nguy cơ ngập</span><span class="overall-kv__value" id="overallHighestRisk">—</span></div>
+            <div class="overall-kv"><span class="overall-kv__label">Trạng thái</span><span class="overall-kv__value" id="overallHighestStatus">—</span></div>
+          </div>
+
+          <div class="glass-card card">
+            <h3 class="card__title">Dự báo 5 phút</h3>
+            <div class="overall-kv"><span class="overall-kv__label">Mực nước dự báo cao nhất</span><span class="overall-kv__value" id="overallMaxLevel">—</span></div>
+            <div class="overall-kv"><span class="overall-kv__label">Trạm tăng nhanh</span><span class="overall-kv__value" id="overallTrendingUp">—</span></div>
+            <div class="overall-kv"><span class="overall-kv__label">Sẵn sàng</span><span class="overall-kv__value" id="overallReadyCount">0/3</span></div>
+          </div>
+
+          <div class="glass-card card">
+            <h3 class="card__title">Khuyến nghị</h3>
+            <div class="overall-action-text" id="overallAction">Chưa đủ dữ liệu từ 3 điểm đo, tiếp tục thu thập và không kết luận an toàn.</div>
+          </div>
+        </div>
+
+        <div class="overall-explanation">
+          <h3 class="card__title">Lý do tổng thể</h3>
+          <ul class="explanation-list" id="overallExplanationList">
+            <li class="explanation-item">Đang chờ dữ liệu đủ 3 trạm.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ── DSS Cards Row 1: Risk + Forecast + Action ── -->
+      <section class="cards dss-cards">
+        <article class="glass-card card card--risk" id="cardRisk">
+          <h3 class="card__title">ĐIỂM NGUY CƠ NGẬP</h3>
+          <div class="risk-score-wrap">
+            <div class="risk-score-circle" id="riskScoreCircle">
+              <span class="risk-score-num" id="valRiskScore">0</span>
+            </div>
+          </div>
+          <div class="risk-score-label" id="riskScoreLabel">AN TOÀN</div>
+        </article>
+
+        <article class="glass-card card card--forecast">
+          <h3 class="card__title">Dự báo mực nước 5 phút</h3>
+          <div class="card__big-value"><span id="valPredictedLevel">—</span><span class="unit">cm</span></div>
+          <p class="card__hint" id="forecastHint">Chưa có dự báo</p>
+        </article>
+
+        <article class="glass-card card card--action">
+          <h3 class="card__title">Khuyến nghị hành động</h3>
+          <div class="action-text" id="valAction">Đang chờ dữ liệu…</div>
+        </article>
+
+        <article class="glass-card card card--data-quality">
+          <h3 class="card__title">Chất lượng dữ liệu</h3>
+          <ul class="dq-list">
+            <li><span class="dq-label">Data Quality</span><span class="dq-val" id="valDataQuality">—</span></li>
+            <li><span class="dq-label">AI Memory</span><span class="dq-val" id="valAiMemory">0/60</span></li>
+            <li><span class="dq-label">Data Freshness</span><span class="dq-val" id="valFreshness">—</span></li>
+            <li><span class="dq-label">Model Version</span><span class="dq-val" id="valModelVer">—</span></li>
+            <li><span class="dq-label">Decision Source</span><span class="dq-val" id="valDecisionSrc">—</span></li>
+          </ul>
+        </article>
+      </section>
+
+      <!-- ── Explanation Panel ── -->
+      <section class="glass-panel explanation-panel">
+        <h2 class="section-title">Explainable AI — Lý do cảnh báo</h2>
+        <ul class="explanation-list" id="explanationList">
+          <li class="explanation-item">Chưa có phân tích</li>
+        </ul>
+      </section>
+
+      <!-- ── Sensor Cards ── -->
       <section class="cards">
         <article class="glass-card card card--gauge">
           <h3 class="card__title">Mực nước</h3>
           <div class="gauge-wrap">
-            <svg class="gauge" viewBox="0 0 120 120" aria-hidden="true">
-              <circle class="gauge__track" cx="60" cy="60" r="48" />
-              <circle class="gauge__arc gauge__arc--level" id="gaugeLevelArc" cx="60" cy="60" r="48" transform="rotate(-90 60 60)" />
-            </svg>
-            <div class="gauge__center">
-              <span class="gauge__num" id="valLevel">—</span>
-              <span class="gauge__unit">cm</span>
-            </div>
+            <svg class="gauge" viewBox="0 0 120 120"><circle class="gauge__track" cx="60" cy="60" r="48"/><circle class="gauge__arc gauge__arc--level" id="gaugeLevelArc" cx="60" cy="60" r="48" transform="rotate(-90 60 60)"/></svg>
+            <div class="gauge__center"><span class="gauge__num" id="valLevel">—</span><span class="gauge__unit">cm</span></div>
           </div>
-          <div class="mini-bar mini-bar--level" aria-hidden="true">
-            <div class="mini-bar__fill" id="levelBar"></div>
-          </div>
+          <div class="mini-bar mini-bar--level"><div class="mini-bar__fill" id="levelBar"></div></div>
         </article>
 
         <article class="glass-card card card--gauge">
           <h3 class="card__title">Lưu lượng</h3>
           <div class="gauge-wrap">
-            <svg class="gauge" viewBox="0 0 120 120" aria-hidden="true">
-              <circle class="gauge__track" cx="60" cy="60" r="48" />
-              <circle class="gauge__arc gauge__arc--flow" id="gaugeFlowArc" cx="60" cy="60" r="48" transform="rotate(-90 60 60)" />
-            </svg>
-            <div class="gauge__center">
-              <span class="gauge__num" id="valFlow">—</span>
-              <span class="gauge__unit">m³/s</span>
-            </div>
+            <svg class="gauge" viewBox="0 0 120 120"><circle class="gauge__track" cx="60" cy="60" r="48"/><circle class="gauge__arc gauge__arc--flow" id="gaugeFlowArc" cx="60" cy="60" r="48" transform="rotate(-90 60 60)"/></svg>
+            <div class="gauge__center"><span class="gauge__num" id="valFlow">—</span><span class="gauge__unit">L/m</span></div>
           </div>
         </article>
 
         <article class="glass-card card">
           <h3 class="card__title">Hiệu suất thoát nước</h3>
           <div class="card__big-value"><span id="valEfficiency">—</span><span class="unit">%</span></div>
-          <div class="linear-gauge">
-            <div class="linear-gauge__fill" id="efficiencyFill"></div>
-          </div>
+          <div class="linear-gauge"><div class="linear-gauge__fill" id="efficiencyFill"></div></div>
           <p class="card__hint">flow ÷ (level + 1)</p>
         </article>
 
         <article class="glass-card card">
           <h3 class="card__title">Mưa dự báo (Open-Meteo)</h3>
           <div class="card__big-value card__big-value--rain">
-            <span class="rain-drop" aria-hidden="true"></span>
+            <span class="rain-drop"></span>
             <span id="valRainForecast">—</span><span class="unit">mm/h</span>
           </div>
         </article>
+
+        <article class="glass-card card card--ai">
+          <h3 class="card__title">Độ tin cậy AI</h3>
+          <div class="gauge-wrap ai-gauge-wrap">
+            <svg class="gauge" viewBox="0 0 120 120"><circle class="gauge__track" cx="60" cy="60" r="48"/><circle class="gauge__arc ai-arc" id="gaugeAiArc" cx="60" cy="60" r="48" transform="rotate(-90 60 60)"/></svg>
+            <div class="gauge__center"><div class="ai-center-val"><span id="valAiConf">—</span><span class="unit">%</span></div></div>
+          </div>
+        </article>
+
+        <article class="glass-card card card--health">
+          <h3 class="card__title">Sức khỏe hệ thống</h3>
+          <ul class="health-list">
+            <li><span class="health-label">Uptime</span><span class="health-val" id="valUptime">00:00:00</span></li>
+            <li><span class="health-label">Tín hiệu</span><span class="health-val" id="valRssi">— dBm</span></li>
+            <li><span class="health-label">Bộ nhớ</span><span class="health-val" id="valStorage">— msg</span></li>
+          </ul>
+        </article>
       </section>
 
+      <!-- ── Charts ── -->
       <section class="charts-block glass-panel">
-        <h2 class="section-title">Biểu đồ thời gian thực</h2>
+        <h2 class="section-title">Biểu đồ thời gian thực (5 phút = 60 điểm)</h2>
         <div class="charts-grid">
-          <div class="chart-box">
-            <h4>Mực nước (cm)</h4>
-            <div class="chart-canvas-wrap"><canvas id="chartLevel"></canvas></div>
-          </div>
-          <div class="chart-box">
-            <h4>Lưu lượng (m³/s)</h4>
-            <div class="chart-canvas-wrap"><canvas id="chartFlow"></canvas></div>
-          </div>
-          <div class="chart-box">
-            <h4>Mưa cục bộ (sensor)</h4>
-            <div class="chart-canvas-wrap"><canvas id="chartRain"></canvas></div>
-          </div>
+          <div class="chart-box"><h4>Mực nước (cm)</h4><div class="chart-canvas-wrap"><canvas id="chartLevel"></canvas></div></div>
+          <div class="chart-box"><h4>Lưu lượng (L/m)</h4><div class="chart-canvas-wrap"><canvas id="chartFlow"></canvas></div></div>
+          <div class="chart-box"><h4>Mưa cục bộ (mm)</h4><div class="chart-canvas-wrap"><canvas id="chartRain"></canvas></div></div>
         </div>
       </section>
 
+      <!-- ── Scenario Panel ── -->
+      <section class="glass-panel scenario-panel">
+        <h2 class="section-title">Kịch bản dự báo (Scenario Simulation)</h2>
+        <div class="scenario-text" id="scenarioText">Chưa có đủ dữ liệu để phân tích kịch bản.</div>
+      </section>
+
+      <!-- ── Map ── -->
       <section class="map-block glass-panel">
         <h2 class="section-title">Bản đồ trạm</h2>
         <div id="map" class="map"></div>
       </section>
 
+      <!-- ── Controls ── -->
       <section class="controls-block glass-panel">
-        <h2 class="section-title">Điều khiển</h2>
+        <h2 class="section-title">Điều khiển & Báo cáo</h2>
         <div class="controls">
           <button type="button" class="btn btn--on" id="btnBuzzerOn">BẬT CÒI</button>
           <button type="button" class="btn btn--off" id="btnBuzzerOff">TẮT CÒI</button>
           <button type="button" class="btn btn--reset" id="btnResetAi">RESET BỘ NHỚ AI</button>
+          <button type="button" class="btn btn--outline" id="btnToggleMute">🔇 BẬT ÂM THANH</button>
+          <button type="button" class="btn btn--export" id="btnExportCsv">📄 XUẤT BÁO CÁO CSV</button>
         </div>
-      </section>
-
-      <section class="log-block">
-        <h2 class="section-title">System Log</h2>
-        <div class="terminal" id="logPanel" role="log" aria-live="polite"></div>
       </section>
         </div>
       </div>
